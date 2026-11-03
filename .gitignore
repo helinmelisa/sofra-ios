@@ -1,0 +1,14 @@
+# Xcode local state
+.DS_Store
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+.build/
+# Local signing and credentials
+*.p12
+*.mobileprovision
+.env
+.env.*
+# Development screenshots
+Today.png
