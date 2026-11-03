@@ -10,6 +10,7 @@
 		A00000000000000000000019 /* NEXTApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000014 /* NEXTApp.swift */; };
 		A00000000000000000000020 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000015 /* Models.swift */; };
 		A00000000000000000000021 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000016 /* Views.swift */; };
+		A00000000000000000000023 = {isa = PBXBuildFile; fileRef = A00000000000000000000022; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -17,6 +18,7 @@
 		A00000000000000000000014 /* NEXTApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NEXTApp.swift; sourceTree = "<group>"; };
 		A00000000000000000000015 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A00000000000000000000016 /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
+		A00000000000000000000022 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptImport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,6 +54,7 @@
 				A00000000000000000000014 /* NEXTApp.swift */,
 				A00000000000000000000015 /* Models.swift */,
 				A00000000000000000000016 /* Views.swift */,
+				A00000000000000000000022 /* ReceiptImport.swift */,
 			);
 			path = NEXT;
 			sourceTree = "<group>";
@@ -122,6 +125,7 @@
 				A00000000000000000000019 /* NEXTApp.swift in Sources */,
 				A00000000000000000000020 /* Models.swift in Sources */,
 				A00000000000000000000021 /* Views.swift in Sources */,
+				A00000000000000000000023 /* ReceiptImport.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -1,6 +1,6 @@
 import SwiftUI
 
-private enum Ink {
+enum Ink {
     static let paper = Color(red: 0.97, green: 0.95, blue: 0.90)
     static let dark = Color(red: 0.19, green: 0.24, blue: 0.20)
     static let rust = Color(red: 0.67, green: 0.28, blue: 0.17)
@@ -183,11 +183,13 @@ struct KitchenView: View {
     @State private var quantity = ""
     @State private var location: StorageLocation = .fridge
     @State private var showingAdd = false
+    @State private var showingReceipt = false
+    @State private var includeMissingRecipes = false
     private var visibleIngredients: [Ingredient] {
         store.data.inventory.filter { $0.location == location }
     }
     private var recipes: [Recipe] {
-        Recipe.all.sorted {
+        Recipe.all.filter { includeMissingRecipes || $0.missing(in: store.data.inventory).isEmpty }.sorted {
             let lhs = $0.missing(in: store.data.inventory).count
             let rhs = $1.missing(in: store.data.inventory).count
             return lhs == rhs ? $0.id < $1.id : lhs < rhs
@@ -200,6 +202,10 @@ struct KitchenView: View {
                     Text(area.rawValue).tag(area)
                 }
             }.pickerStyle(.segmented)
+            Button { showingReceipt = true } label: {
+                Label("Fişten mutfağa ekle", systemImage: "doc.text.viewfinder")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }.buttonStyle(.bordered)
             HStack {
                 Caption(text: "\(location.rawValue) · \(visibleIngredients.count) malzeme")
                 Spacer()
@@ -238,8 +244,12 @@ struct KitchenView: View {
             NavigationLink {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
-                    Text("Tarifler tüm bölümlerdeki malzeme adlarına göre eşleşir; miktarlar kontrol edilmez.")
+                    Toggle("Eksik malzemeli tarifleri de göster", isOn: $includeMissingRecipes)
+                    Text("Tarifler tüm bölümlerdeki malzemelerden seçilir. Miktar ve porsiyon yeterliliğini kontrol et.")
                         .font(.caption).foregroundStyle(.secondary)
+                    if recipes.isEmpty {
+                        ContentUnavailableView("Henüz tam eşleşen tarif yok", systemImage: "carrot", description: Text("Mutfaktaki malzemeleri güncelle veya eksik malzemeli tarifleri aç."))
+                    }
                     ForEach(recipes) { recipe in
                         NavigationLink { RecipeDetail(recipe: recipe) } label: {
                             VStack(alignment: .leading, spacing: 10) {
@@ -254,6 +264,7 @@ struct KitchenView: View {
                     }
                     }.padding(26)
                 }.background(Ink.paper).foregroundStyle(Ink.dark)
+                    .toolbar(.visible, for: .navigationBar)
                     .navigationTitle("Ne pişse?")
                     .navigationBarTitleDisplayMode(.inline)
             } label: {
@@ -267,6 +278,7 @@ struct KitchenView: View {
                 }.padding(.vertical, 14)
             }.buttonStyle(.plain)
         }
+        .sheet(isPresented: $showingReceipt) { ReceiptImportView() }
         .sheet(isPresented: $showingAdd) {
             NavigationStack {
                 Form {
@@ -329,7 +341,9 @@ struct RecipeDetail: View {
                 Text("Porsiyonu ihtiyacına göre ayarla. Alerjenleri ve malzeme miktarlarını pişirmeden önce kontrol et.")
                     .font(.caption).foregroundStyle(.secondary)
             }.padding(26)
-        }.background(Ink.paper).foregroundStyle(Ink.dark).navigationBarTitleDisplayMode(.inline)
+        }.background(Ink.paper).foregroundStyle(Ink.dark)
+            .toolbar(.visible, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.inline)
     }
 }
 
