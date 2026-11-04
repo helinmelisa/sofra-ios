@@ -7,8 +7,8 @@ enum StorageLocation: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     static func suggested(for name: String) -> StorageLocation {
-        let key = Recipe.key(name)
-        if ["Yumurta", "Yoğurt", "Domates", "Salatalık"].contains(where: { Recipe.key($0) == key }) {
+        let key = Recipe.ingredientKey(name)
+        if ["Yumurta", "Yoğurt", "Domates", "Salatalık", "Süt", "Peynir", "Krema", "Ispanak", "Mantar", "Tavuk", "Dana kıyma"].contains(where: { Recipe.ingredientKey($0) == key }) {
             return .fridge
         }
         return .pantry
@@ -44,6 +44,7 @@ struct ShoppingItem: Identifiable, Codable {
     var id = UUID()
     var name: String
     var checked = false
+    var quantity: String? = nil
 }
 
 struct Recipe: Identifiable {
@@ -54,8 +55,8 @@ struct Recipe: Identifiable {
     let steps: [String]
 
     func missing(in inventory: [Ingredient]) -> [String] {
-        let available = Set(inventory.filter { StockAmount.parse($0.quantity)?.value != 0 }.map { Self.key($0.recipeName ?? $0.name) })
-        return ingredients.filter { !available.contains(Self.key($0)) }
+        let available = Set(inventory.filter { StockAmount.parse($0.quantity)?.value != 0 }.map { Self.ingredientKey($0.recipeName ?? $0.name) })
+        return ingredients.filter { !available.contains(Self.ingredientKey($0)) }
     }
 
     static func key(_ name: String) -> String {
@@ -89,7 +90,7 @@ struct Recipe: Identifiable {
         Recipe(id: "carrot", name: "Yoğurtlu havuç", minutes: 15,
                ingredients: ["Havuç", "Yoğurt", "Zeytinyağı"],
                steps: ["Havucu yıkayıp rendele.", "Zeytinyağında yumuşayana kadar pişir ve soğumaya bırak.", "Soğuyan havucu yoğurtla karıştır."])
-    ]
+    ] + RecipeCatalog.additional
 }
 
 enum LunchPlace: String, Codable, CaseIterable, Identifiable {
@@ -126,6 +127,10 @@ struct AppData: Codable {
     var completed: [String: Set<String>] = [:]
     var dayMeals: [String: [String: DayMeal]]? = nil
     var cookingHistory: [CookingRecord]? = nil
+    var recipePlans: [RecipePlan]? = nil
+    var recipeShoppingChecks: [String: String]? = nil
+    var preparedMeals: [PreparedMeal]? = nil
+    var leftoverUses: [LeftoverUse]? = nil
 
     static func dayKey(_ date: Date = .now) -> String {
         let formatter = DateFormatter()
@@ -281,10 +286,11 @@ struct DayMeal: Codable {
     var dish: String
     var note: String
     var recipeID: String?
-    var recipe: Recipe? { Recipe.all.first { $0.id == recipeID || Recipe.key($0.name) == Recipe.key(dish) } }
+    var preparedID: UUID? = nil
+    var recipe: Recipe? { guard preparedID == nil else { return nil }; return Recipe.all.first { $0.id == recipeID || Recipe.key($0.name) == Recipe.key(dish) } }
 }
 
-struct StockAmount: Equatable {
+struct StockAmount: Equatable, Codable {
     var value: Double
     var unit: String
     var dimension: String {
@@ -298,7 +304,7 @@ struct StockAmount: Equatable {
     }
     static func parse(_ text: String) -> StockAmount? {
         let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard let regex = try? NSRegularExpression(pattern: #"^(\d+(?:[.,]\d+)?)\s*(kg|g|gr|gram|ml|l|lt|litre|adet|kase|paket|şişe|kap)?$"#),
+        guard let regex = try? NSRegularExpression(pattern: #"^(\d+(?:[.,]\d+)?)\s*(kg|g|gr|gram|ml|l|lt|litre|adet|kase|paket|şişe|kap|dilim|diş)?$"#),
               let match = regex.firstMatch(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)),
               let numberRange = Range(match.range(at: 1), in: normalized),
               let value = Double(normalized[numberRange].replacingOccurrences(of: ",", with: ".")), value.isFinite else { return nil }
@@ -326,6 +332,9 @@ struct CookingRecord: Identifiable, Codable {
     let before: [Ingredient]
     let after: [Ingredient]
     var undone = false
+    var planBefore: RecipePlan? = nil
+    var planRemaining: Int? = nil
+    var preparedID: UUID? = nil
 }
 
 enum KitchenError: LocalizedError {
@@ -336,11 +345,7 @@ enum KitchenError: LocalizedError {
 extension Recipe {
     /// Suggested quantities for one serving, editable before cooking.
     func suggestedUse(for name: String) -> String {
-        let amounts = ["Yumurta": "2 adet", "Domates": "1 adet", "Salatalık": "1 adet",
-                       "Zeytinyağı": "10 ml", "Yoğurt": "150 g", "Nohut": "150 g",
-                       "Yulaf": "40 g", "Muz": "1 adet", "Makarna": "80 g",
-                       "Patates": "200 g", "Ton balığı": "100 g", "Iceberg marul": "100 g", "Havuç": "100 g"]
-        return amounts[name] ?? ""
+        return amount(for: name)?.text ?? ""
     }
 }
 
@@ -359,16 +364,18 @@ extension AppData {
     func cooking(on day: String, slot: MealSlot) -> CookingRecord? {
         cookingHistory?.last { !$0.undone && $0.day == day && $0.slot == slot.rawValue }
     }
-    func usage(for recipe: Recipe?) -> [UsageDraft] {
-        let stocks = recipe.map { recipe in inventory.filter { stock in recipe.ingredients.contains { Recipe.key($0) == Recipe.key(stock.recipeName ?? stock.name) } } } ?? inventory
+    func usage(for recipe: Recipe?, servings: Int = 1) -> [UsageDraft] {
+        let stocks = recipe.map { recipe in inventory.filter { stock in recipe.ingredients.contains { Recipe.ingredientKey($0) == Recipe.ingredientKey(stock.recipeName ?? stock.name) } } } ?? inventory
         return stocks.map { stock in
             UsageDraft(ingredientID: stock.id, name: stock.name, original: stock.quantity,
-                       available: stock.quantity, used: recipe?.suggestedUse(for: stock.recipeName ?? stock.name) ?? "", selected: recipe != nil)
+                       available: stock.quantity, used: recipe?.amount(for: stock.recipeName ?? stock.name, servings: servings)?.text ?? "", selected: recipe != nil)
         }
     }
-    mutating func cook(id: UUID, dish: String, drafts: [UsageDraft], day: String? = nil, slot: MealSlot? = nil) throws {
+    mutating func cook(id: UUID, dish: String, drafts: [UsageDraft], day: String? = nil, slot: MealSlot? = nil, recipeID: String? = nil, servings: Int = 1, eatenNow: Int = 1) throws {
         guard !(cookingHistory ?? []).contains(where: { $0.id == id }) else { throw KitchenError.invalid("Bu pişirme zaten kaydedildi.") }
-        if let day, let slot, cooking(on: day, slot: slot) != nil { throw KitchenError.invalid("Bu öğünün stok düşümü zaten yapıldı.") }
+        guard (day == nil) == (slot == nil) else { throw KitchenError.invalid("Öğün günü ve türünü birlikte seç.") }
+        if let day, let slot, cooking(on: day, slot: slot) != nil || leftoverUse(on: day, slot: slot) != nil || completed[day, default: []].contains(slot.rawValue) { throw KitchenError.invalid("Bu öğün zaten tamamlandı.") }
+        guard (1...8).contains(servings), (0...servings).contains(eatenNow), day == nil || eatenNow > 0 else { throw KitchenError.invalid("Pişen ve yenen porsiyonları kontrol et.") }
         let selected = drafts.filter(\.selected)
         guard !selected.isEmpty else { throw KitchenError.invalid("Kullandığın en az bir malzemeyi seç.") }
         guard Set(selected.map(\.ingredientID)).count == selected.count else { throw KitchenError.invalid("Aynı malzeme birden fazla seçilmiş.") }
@@ -393,12 +400,35 @@ extension AppData {
         // Validate everything first; a failure must not partially consume the inventory.
         for updated in updates { if let index = inventory.firstIndex(where: { $0.id == updated.id }) { inventory[index] = updated } }
         if cookingHistory == nil { cookingHistory = [] }
-        cookingHistory?.append(CookingRecord(id: id, dish: dish, day: day, slot: slot?.rawValue, before: previous, after: updates))
+        var record = CookingRecord(id: id, dish: dish, day: day, slot: slot?.rawValue, before: previous, after: updates)
+        if let recipeID, let plan = activeRecipePlans.first(where: { $0.recipeID == recipeID }) {
+            record.planBefore = plan
+            record.planRemaining = max(0, plan.servings - servings)
+            if plan.servings <= servings { removeRecipePlan(recipeID) }
+            else if let recipe = plan.recipe { setRecipePlan(recipe, servings: plan.servings - servings) }
+        }
+        if servings > eatenNow {
+            let ready = PreparedMeal(dish: dish, recipeID: recipeID, initialPortions: servings - eatenNow, remaining: servings - eatenNow)
+            if preparedMeals == nil { preparedMeals = [] }
+            preparedMeals?.append(ready)
+            record.preparedID = ready.id
+        }
+        cookingHistory?.append(record)
         if let day, let slot { completed[day, default: []].insert(slot.rawValue) }
     }
     mutating func undoCooking(_ id: UUID) throws {
         guard let index = cookingHistory?.firstIndex(where: { $0.id == id && !$0.undone }), let record = cookingHistory?[index] else {
             throw KitchenError.invalid("Geri alınacak pişirme bulunamadı.")
+        }
+        if let readyID = record.preparedID {
+            guard let ready = preparedMeals?.first(where: { $0.id == readyID }), ready.remaining == ready.initialPortions,
+                  !(leftoverUses ?? []).contains(where: { $0.preparedID == readyID && !$0.undone }) else {
+                throw KitchenError.invalid("Kalan yemekten yenmiş. Önce o öğünleri geri al.")
+            }
+        }
+        if let plan = record.planBefore {
+            let current = activeRecipePlans.first { $0.recipeID == plan.recipeID }?.servings ?? 0
+            guard current == record.planRemaining else { throw KitchenError.invalid("Pişirme planı sonradan değişti. Mutfak stoklarını elle kontrol et.") }
         }
         for after in record.after {
             guard inventory.contains(where: { $0.id == after.id && $0.quantity == after.quantity }) else {
@@ -408,6 +438,8 @@ extension AppData {
         for before in record.before {
             if let stockIndex = inventory.firstIndex(where: { $0.id == before.id }) { inventory[stockIndex].quantity = before.quantity }
         }
+        if let readyID = record.preparedID { preparedMeals?.removeAll { $0.id == readyID } }
+        if let plan = record.planBefore, let recipe = plan.recipe { setRecipePlan(recipe, servings: plan.servings) }
         cookingHistory?[index].undone = true
         if let day = record.day, let slot = record.slot { completed[day, default: []].remove(slot) }
     }

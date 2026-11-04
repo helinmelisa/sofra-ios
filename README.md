@@ -14,18 +14,31 @@ Built with SwiftUI for iOS 17 and later. Dynamic receipt translation requires iO
 - **Tomorrow:** work-from-home planning, packed lunches or Lidl for Lamaces,
   and the Sequira cafeteria. A saved lunch carries over to the next day's timeline.
 - **Kitchen:** Fridge, Pantry, and Freezer sections with ingredient quantities and storage controls.
-- **Recipes:** eight starter recipes, filtered to show ingredients available across all storage areas.
-  Recipes with missing ingredients can be included with an optional toggle.
+- **Recipes:** 40 starter recipes spanning breakfast, main dishes, salads/bowls, and soups.
+  Kitchen-based recommendations separate fully matched recipes from those missing one or two
+  ingredients. Browse the full collection, search by dish or ingredient, and filter by category.
+- **Cooking plan:** choose recipes and how many portions to prepare (one by default).
+  Missing ingredients automatically populate shopping; compatible quantities are combined and
+  existing kitchen stock is subtracted once across the entire plan.
 - **Cooking and stock:** review editable single-serving usage suggestions, then deduct the quantities
   actually used. Supports compatible g/kg and ml/l conversions and count-based units.
   Unknown or ambiguous stock amounts must be clarified before deduction. Deductions are atomic,
   cannot create negative stock, and can be undone while the affected stock has not changed.
   A cooked recipe can also be added to a chosen meal in today's timeline.
+- **Leftovers:** record portions cooked separately from portions eaten now. Uneaten portions become
+  ready meals that can be assigned to a later day's meal. Eating a ready portion reduces its remaining
+  count without deducting ingredients again. Cooking reduces the remaining portions in a recipe plan;
+  undo restores the plan and stock while those records have not subsequently changed.
 - **Receipt import:** select a receipt image from Photos. Vision reads the image on-device;
   Apple's Translation framework dynamically translates Portuguese product names into Turkish.
   The existing grocery vocabulary helps identify known ingredients and preserve recipe matching,
   but translation is no longer limited to those words. New products are reviewed before selection.
-- **Shopping:** add missing recipe ingredients, check off purchases, and move them into the kitchen.
+- **Shopping:** switch between a consolidated ingredient list and recipe groups. Shared ingredients
+  appear once under a common section. Hand-added needs survive recipe removal. Purchase marks are
+  retained while quantities remain unchanged; changing the required amount calls for review.
+  Checking an item does not change stock. A separate transfer sheet records actual purchase amounts
+  and storage locations before updating the kitchen. Unknown or incompatible stock units are flagged
+  for review instead of being silently converted or treated as empty.
 - **Local persistence:** inventory, meals, cooking records, shopping, and water are saved on-device.
   Existing installations and older records remain compatible.
 
@@ -69,7 +82,8 @@ xcodebuild -project Sofra.xcodeproj -scheme Sofra -configuration Debug \
 The command-line model checks cover ingredient matching, shopping deduplication,
 JSON compatibility, storage locations, receipt parsing, recipe eligibility, home-workday plans,
 editable daily meals, stock arithmetic, unit conversion, failed-deduction rollback,
-duplicate protection, and undo. No XCTest or UI-test target is configured yet.
+duplicate protection, undo, recipe-plan aggregation, purchase transfer, portion scaling,
+leftovers without double stock deduction, and persistence of older records. No XCTest or UI-test target is configured yet.
 Translation model downloads and translation output require testing on a supported device.
 
 ## Current scope
@@ -77,5 +91,7 @@ Translation model downloads and translation output require testing on a supporte
 This app is for my personal use. The recipe collection and initial inventory are starter data.
 Lidl stock and cafeteria menus are not connected live. There is no cloud sync,
 nutrition calculation, health profile, or external generative AI service.
-Recipe suggestions check ingredient presence; cooking quantities are reviewed separately.
+Recipe suggestions check ingredient presence. Shopping quantities use compatible recorded units;
+unknown amounts and unit mismatches need review. Cooking quantities remain editable before deduction.
+The library is curated local recipe data, not an external recipe feed or AI-generated recipe service.
 This is a development build, not an App Store or TestFlight release.

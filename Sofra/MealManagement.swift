@@ -13,6 +13,7 @@ struct CookingRequest: Identifiable {
     let recipe: Recipe?
     var day: String? = nil
     var slot: MealSlot? = nil
+    var servings = 1
 }
 
 struct MealEditorView: View {
@@ -21,7 +22,7 @@ struct MealEditorView: View {
     let request: MealEditRequest
     @State private var draft: DayMeal
     @State private var time: Date
-    private var isCooked: Bool { store.data.cooking(on: request.day, slot: request.slot) != nil }
+    private var isCooked: Bool { store.data.cooking(on: request.day, slot: request.slot) != nil || store.data.leftoverUse(on: request.day, slot: request.slot) != nil }
     init(request: MealEditRequest) {
         self.request = request
         _draft = State(initialValue: request.meal)
@@ -36,6 +37,7 @@ struct MealEditorView: View {
                     TextField("Ne yiyeceksin?", text: $draft.dish)
                         .disabled(isCooked)
                         .onChange(of: draft.dish) { _, name in
+                            if let id = draft.preparedID, store.data.preparedMeals?.first(where: { $0.id == id })?.dish != name { draft.preparedID = nil }
                             draft.recipeID = Recipe.all.first { Recipe.key($0.name) == Recipe.key(name) }?.id
                         }
                     TextField("Not", text: $draft.note, axis: .vertical)
@@ -44,9 +46,22 @@ struct MealEditorView: View {
                     Text("Bu öğünde stok düşümü yapıldı. Yemeği değiştirmek için önce Bugün ekranından tamamlanma işaretini geri al.")
                         .font(.caption)
                 } else {
+                    if !store.data.readyMeals.isEmpty {
+                        Section("Hazır yemeklerden seç") {
+                            ForEach(store.data.readyMeals) { ready in
+                                Button("\(ready.dish) · \(ready.remaining) porsiyon kaldı") {
+                                    draft.dish = ready.dish
+                                    draft.recipeID = nil
+                                    draft.preparedID = ready.id
+                                    draft.note = "Hazır yemek"
+                                }
+                            }
+                        }
+                    }
                     Section("Tariften seç") {
                         NavigationLink("Mutfaktaki malzemelerle tarifler") {
                             RecipeListView(selectionLabel: "Bu öğün için seç") { recipe in
+                                draft.preparedID = nil
                                 draft.dish = recipe.name
                                 draft.recipeID = recipe.id
                             }
@@ -80,6 +95,8 @@ struct CookingSheet: View {
     var onSaved: ((UUID) -> Void)? = nil
     @State private var drafts: [UsageDraft] = []
     @State private var loaded = false
+    @State private var servings = 1
+    @State private var eatenNow = 1
     @State private var logToSlot: MealSlot?
     @State private var error: String?
     private var selected: Bool { drafts.contains(where: \.selected) }
@@ -88,7 +105,10 @@ struct CookingSheet: View {
             Form {
                 Section {
                     Text(request.dish).font(.system(.title2, design: .serif))
-                    Text(request.recipe == nil ? "Kullandığın malzemeleri seç ve miktarlarını gir." : "Miktarlar tek kişilik başlangıç önerileridir. Gerçekte kullandığın miktarları düzenle.")
+                    Stepper("\(servings) porsiyon pişirdim", value: $servings, in: 1...8)
+                    Stepper("Şimdi \(eatenNow) porsiyon yedim", value: $eatenNow, in: (request.day == nil ? 0 : 1)...servings)
+                    if servings > eatenNow { Text("\(servings - eatenNow) porsiyon hazır yemek olarak kalacak.").font(.caption).foregroundStyle(Ink.rust) }
+                    Text(request.recipe == nil ? "Kullandığın malzemeleri seç ve miktarlarını gir." : "Öneriler pişen porsiyon sayısına göre değişir. Gerçekte kullandığın miktarları düzenle.")
                         .font(.subheadline)
                     Text("Stok ve kullanım için 2 adet, 500 g veya 250 ml gibi bir miktar gir. Belirsiz kayıtları burada düzeltebilirsin.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -103,7 +123,7 @@ struct CookingSheet: View {
                         Picker("Bugünün akışına ekle", selection: $logToSlot) {
                             Text("Sadece stoktan düş").tag(nil as MealSlot?)
                             ForEach(MealSlot.allCases) { slot in Text(slot.title).tag(Optional(slot)) }
-                        }
+                        }.disabled(eatenNow == 0)
                     }
                     if drafts.isEmpty { Text("Mutfakta malzeme yok. Önce stoklarını ekle.") }
                 }
@@ -143,9 +163,10 @@ struct CookingSheet: View {
                         do {
                             let slot = request.slot ?? logToSlot
                             let day = request.day ?? (slot == nil ? nil : AppData.dayKey())
-                            try store.data.cook(id: request.id, dish: request.dish, drafts: drafts, day: day, slot: slot)
+                            try store.data.cook(id: request.id, dish: request.dish, drafts: drafts, day: day, slot: slot, recipeID: request.recipe?.id, servings: servings, eatenNow: eatenNow)
                             if request.day == nil, let day, let slot {
                                 var meal = store.data.meal(on: day, slot: slot)
+                                meal.preparedID = nil
                                 meal.dish = request.dish
                                 meal.recipeID = request.recipe?.id
                                 store.data.updateMeal(meal, day: day, slot: slot)
@@ -156,8 +177,13 @@ struct CookingSheet: View {
                     }.disabled(!selected)
                 }
             }
+            .onChange(of: eatenNow) { _, count in if count == 0 { logToSlot = nil } }
+            .onChange(of: servings) { _, count in
+                eatenNow = min(eatenNow, count)
+                if request.recipe != nil { drafts = store.data.usage(for: request.recipe, servings: count) }
+            }
             .onAppear {
-                if !loaded { drafts = store.data.usage(for: request.recipe); loaded = true }
+                if !loaded { servings = request.servings; drafts = store.data.usage(for: request.recipe, servings: request.servings); loaded = true }
             }
         }.tint(Ink.dark)
     }

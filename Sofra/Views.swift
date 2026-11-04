@@ -25,7 +25,7 @@ struct RootView: View {
     }
 }
 
-private struct Journal<Content: View>: View {
+struct Journal<Content: View>: View {
     let eyebrow: String
     let title: String
     @ViewBuilder var content: Content
@@ -50,7 +50,7 @@ private struct Journal<Content: View>: View {
     }
 }
 
-private struct Caption: View {
+struct Caption: View {
     let text: String
     var body: some View {
         Text(text.uppercased()).font(.caption.weight(.semibold)).tracking(2).foregroundStyle(Ink.rust)
@@ -63,6 +63,7 @@ struct TodayView: View {
     @State private var now = Date.now
     @State private var editingMeal: MealEditRequest?
     @State private var cookingMeal: CookingRequest?
+    @State private var usingPrepared: PreparedUseRequest?
     @State private var mealError: String?
     private var key: String { AppData.dayKey(now) }
     private var water: Int { store.data.water[key, default: 0] }
@@ -93,6 +94,7 @@ struct TodayView: View {
             }.padding(22).background(Ink.dark.opacity(0.06))
         }
         .sheet(item: $editingMeal) { request in MealEditorView(request: request) }
+        .sheet(item: $usingPrepared) { PreparedUseSheet(request: $0) }
         .sheet(item: $cookingMeal) { request in CookingSheet(request: request) }
         .alert("Öğün güncellenemedi", isPresented: Binding(get: { mealError != nil }, set: { if !$0 { mealError = nil } })) {
             Button("Tamam") { mealError = nil }
@@ -123,11 +125,15 @@ struct TodayView: View {
                 if done {
                     if let cooked = store.data.cooking(on: key, slot: slot) {
                         do { try store.data.undoCooking(cooked.id) } catch { mealError = error.localizedDescription }
+                    } else if let use = store.data.leftoverUse(on: key, slot: slot) {
+                        do { try store.data.undoPreparedUse(use.id) } catch { mealError = error.localizedDescription }
                     } else { store.data.completed[key, default: []].remove(slot.rawValue) }
+                } else if let preparedID = item.preparedID {
+                    usingPrepared = PreparedUseRequest(preparedID: preparedID, day: key, slot: slot)
                 } else if item.dish.isEmpty {
                     editingMeal = MealEditRequest(day: key, slot: slot, meal: item)
                 } else {
-                    cookingMeal = CookingRequest(dish: item.dish, recipe: item.recipe, day: key, slot: slot)
+                    cookingMeal = CookingRequest(dish: item.dish, recipe: item.recipe, day: key, slot: slot, servings: store.data.activeRecipePlans.first { $0.recipeID == item.recipe?.id }?.servings ?? 1)
                 }
             } label: {
                 Image(systemName: done ? "checkmark.circle.fill" : "circle")
@@ -172,6 +178,7 @@ struct TomorrowView: View {
                 TextField("Öğle yemeği", text: $meal).textFieldStyle(.roundedBorder)
                 TextField("Hazırlık notu", text: $note, axis: .vertical).textFieldStyle(.roundedBorder)
                 Button(saved ? "Plan kaydedildi ✓" : "Yarını planla") {
+                    store.data.dayMeals?[key]?[MealSlot.lunch.rawValue] = nil
                     store.data.lunches[key] = LunchPlan(date: key, place: place, meal: meal.trimmingCharacters(in: .whitespacesAndNewlines), note: note)
                     saved = true
                 }.buttonStyle(.borderedProminent).tint(Ink.dark).foregroundStyle(.white)
@@ -212,6 +219,7 @@ struct KitchenView: View {
     @State private var location: StorageLocation = .fridge
     @State private var showingAdd = false
     @State private var showingReceipt = false
+    @State private var editingStock: Ingredient?
     private var visibleIngredients: [Ingredient] {
         store.data.inventory.filter { $0.location == location }
     }
@@ -245,6 +253,7 @@ struct KitchenView: View {
                     }
                     Spacer()
                     Menu {
+                        Button("Miktarı düzenle") { editingStock = ingredient }
                         ForEach(StorageLocation.allCases.filter { $0 != ingredient.location }) { area in
                             Button("\(area.rawValue) bölümüne taşı") {
                                 if let index = store.data.inventory.firstIndex(where: { $0.id == ingredient.id }) {
@@ -274,6 +283,7 @@ struct KitchenView: View {
                 }.padding(.vertical, 14)
             }.buttonStyle(.plain)
         }
+        .sheet(item: $editingStock) { StockEditSheet(stock: $0) }
         .sheet(isPresented: $showingReceipt) { ReceiptImportView() }
         .sheet(isPresented: $showingAdd) {
             NavigationStack {
@@ -309,58 +319,11 @@ struct KitchenView: View {
     }
 }
 
-struct RecipeListView: View {
-    @EnvironmentObject private var store: FoodStore
-    @Environment(\.dismiss) private var dismiss
-    @State private var includeMissingRecipes = false
-    var selectionLabel = "Yarının öğle yemeği olarak seç"
-    var onSelect: ((Recipe) -> Void)? = nil
-    private var recipes: [Recipe] {
-        Recipe.all.filter { includeMissingRecipes || $0.missing(in: store.data.inventory).isEmpty }.sorted {
-            let lhs = $0.missing(in: store.data.inventory).count
-            let rhs = $1.missing(in: store.data.inventory).count
-            return lhs == rhs ? $0.id < $1.id : lhs < rhs
-        }
-    }
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                Toggle("Eksik malzemeli tarifleri de göster", isOn: $includeMissingRecipes)
-                Text("Tarifler tüm bölümlerdeki malzemelerden seçilir. Miktar ve porsiyon yeterliliğini kontrol et.")
-                    .font(.caption).foregroundStyle(.secondary)
-                if recipes.isEmpty {
-                    ContentUnavailableView("Henüz tam eşleşen tarif yok", systemImage: "carrot", description: Text("Mutfaktaki malzemeleri güncelle veya eksik malzemeli tarifleri aç."))
-                }
-                ForEach(recipes) { recipe in
-                    NavigationLink { RecipeDetail(recipe: recipe) } label: {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("\(recipe.minutes) DK").font(.caption).tracking(2).foregroundStyle(Ink.rust)
-                            Text(recipe.name).font(.system(.title2, design: .serif))
-                            let missing = recipe.missing(in: store.data.inventory)
-                            Text(missing.isEmpty ? "Tüm malzemeler rafta" : "\(missing.count) malzeme eksik →")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 12)
-                    }.buttonStyle(.plain)
-                    if let onSelect {
-                        Button(selectionLabel) {
-                            onSelect(recipe)
-                            dismiss()
-                        }.buttonStyle(.borderedProminent).tint(Ink.dark).foregroundStyle(.white)
-                    }
-                    Divider()
-                }
-            }.padding(26)
-        }.background(Ink.paper).foregroundStyle(Ink.dark)
-            .toolbar(.visible, for: .navigationBar)
-            .navigationTitle("Ne pişse?")
-            .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
 struct RecipeDetail: View {
     @EnvironmentObject private var store: FoodStore
     let recipe: Recipe
-    @State private var added = false
+    @State private var servings = 1
+    @State private var planning = false
     @State private var cooking: CookingRequest?
     @State private var lastCookingID: UUID?
     @State private var stockError: String?
@@ -370,16 +333,18 @@ struct RecipeDetail: View {
             VStack(alignment: .leading, spacing: 24) {
                 Caption(text: "Mutfaktan · \(recipe.minutes) dakika")
                 Text(recipe.name).font(.system(size: 38, design: .serif))
+                Stepper("\(servings) porsiyon", value: $servings, in: 1...8)
                 ForEach(recipe.ingredients, id: \.self) { ingredient in
-                    Label(ingredient, systemImage: missing.contains(ingredient) ? "circle" : "checkmark.circle.fill")
+                    HStack {
+                        Label(ingredient, systemImage: missing.contains(ingredient) ? "circle" : "checkmark.circle.fill")
+                        Spacer()
+                        Text(recipe.amount(for: ingredient, servings: servings)?.text ?? "").font(.caption)
+                    }
                 }
-                if !missing.isEmpty {
-                    Button(added ? "Alışveriş listesine eklendi ✓" : "Eksikleri listeye ekle") {
-                        store.data.addShopping(missing); added = true
-                    }.buttonStyle(.borderedProminent).tint(Ink.dark).foregroundStyle(.white)
-                }
+                Button("Pişirme planı ve alışveriş") { planning = true }
+                    .buttonStyle(.bordered).tint(Ink.dark)
                 Button("Pişirdim · stoktan düş") {
-                    cooking = CookingRequest(dish: recipe.name, recipe: recipe)
+                    cooking = CookingRequest(dish: recipe.name, recipe: recipe, servings: servings)
                 }.buttonStyle(.borderedProminent).tint(Ink.dark).foregroundStyle(.white)
                 if let id = lastCookingID {
                     Button("Son stok düşümünü geri al") {
@@ -400,57 +365,11 @@ struct RecipeDetail: View {
         }.background(Ink.paper).foregroundStyle(Ink.dark)
             .toolbar(.visible, for: .navigationBar)
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $planning) { RecipePlanSheet(recipe: recipe, initialServings: servings) }
+            .onAppear { servings = store.data.activeRecipePlans.first { $0.recipeID == recipe.id }?.servings ?? 1 }
             .sheet(item: $cooking) { request in CookingSheet(request: request) { lastCookingID = $0 } }
             .alert("Stok güncellenemedi", isPresented: Binding(get: { stockError != nil }, set: { if !$0 { stockError = nil } })) {
                 Button("Tamam") { stockError = nil }
             } message: { Text(stockError ?? "") }
     }
-}
-
-struct ShoppingView: View {
-    @EnvironmentObject private var store: FoodStore
-    @State private var name = ""
-    var body: some View {
-        Journal(eyebrow: "Bir sonraki alışveriş", title: "Küçük\nbir liste.") {
-            HStack {
-                TextField("Listeye bir şey ekle", text: $name).textFieldStyle(.roundedBorder)
-                    .onSubmit(add)
-                Button(action: add) { Image(systemName: "plus").frame(width: 44, height: 44) }
-                    .accessibilityLabel("Alışveriş listesine ekle")
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            if store.data.shopping.isEmpty {
-                Text("Şimdilik ihtiyacın olan bir şey yok. Tariflerdeki eksikleri buraya ekleyebilirsin.")
-                    .font(.system(.title3, design: .serif)).padding(.vertical, 32)
-            }
-            ForEach(store.data.shopping) { item in
-                HStack {
-                    Button {
-                        if let index = store.data.shopping.firstIndex(where: { $0.id == item.id }) {
-                            store.data.shopping[index].checked.toggle()
-                        }
-                    } label: {
-                        Label(item.name, systemImage: item.checked ? "checkmark.circle.fill" : "circle")
-                            .strikethrough(item.checked).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    }.accessibilityLabel("\(item.name), \(item.checked ? "alındı" : "alınacak")")
-                    Button {
-                        store.data.shopping.removeAll { $0.id == item.id }
-                    } label: { Image(systemName: "trash").frame(width: 44, height: 44) }
-                        .accessibilityLabel("\(item.name) listesinden sil")
-                }
-                Divider()
-            }
-            if store.data.shopping.contains(where: \.checked) {
-                Button("Alınanları mutfağa taşı") {
-                    for item in store.data.shopping where item.checked {
-                        if !store.data.inventory.contains(where: { Recipe.key($0.name) == Recipe.key(item.name) }) {
-                            store.data.inventory.append(Ingredient(name: item.name, quantity: "Miktar ekle"))
-                        }
-                    }
-                    store.data.shopping.removeAll(where: \.checked)
-                }.buttonStyle(.borderedProminent).tint(Ink.dark).foregroundStyle(.white)
-            }
-        }
-    }
-    private func add() { store.data.addShopping([name]); name = "" }
 }
