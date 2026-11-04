@@ -34,7 +34,7 @@ private struct Journal<Content: View>: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     HStack {
-                        Text("NEXT").font(.system(.headline, design: .serif)).tracking(4)
+                        Text("SOFRA").font(.system(.headline, design: .serif)).tracking(4)
                         Spacer()
                         Text(eyebrow).font(.caption).tracking(2)
                     }
@@ -158,6 +158,14 @@ struct TomorrowView: View {
                     saved = true
                 }.buttonStyle(.borderedProminent).tint(Ink.dark).foregroundStyle(.white)
                     .disabled(meal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if place == .home {
+                    NavigationLink("Mutfaktakilerden tarif seç →") {
+                        RecipeListView { recipe in
+                            meal = recipe.name
+                            saved = false
+                        }
+                    }
+                }
                 if place == .prep {
                     NavigationLink("Tarifi ve eksikleri gör →") { RecipeDetail(recipe: Recipe.all[0]) }
                 }
@@ -184,16 +192,8 @@ struct KitchenView: View {
     @State private var location: StorageLocation = .fridge
     @State private var showingAdd = false
     @State private var showingReceipt = false
-    @State private var includeMissingRecipes = false
     private var visibleIngredients: [Ingredient] {
         store.data.inventory.filter { $0.location == location }
-    }
-    private var recipes: [Recipe] {
-        Recipe.all.filter { includeMissingRecipes || $0.missing(in: store.data.inventory).isEmpty }.sorted {
-            let lhs = $0.missing(in: store.data.inventory).count
-            let rhs = $1.missing(in: store.data.inventory).count
-            return lhs == rhs ? $0.id < $1.id : lhs < rhs
-        }
     }
     var body: some View {
         Journal(eyebrow: "Eldekilerle iyi yemek", title: "Mutfakta\nne var?") {
@@ -242,31 +242,7 @@ struct KitchenView: View {
                 Divider()
             }
             NavigationLink {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                    Toggle("Eksik malzemeli tarifleri de göster", isOn: $includeMissingRecipes)
-                    Text("Tarifler tüm bölümlerdeki malzemelerden seçilir. Miktar ve porsiyon yeterliliğini kontrol et.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if recipes.isEmpty {
-                        ContentUnavailableView("Henüz tam eşleşen tarif yok", systemImage: "carrot", description: Text("Mutfaktaki malzemeleri güncelle veya eksik malzemeli tarifleri aç."))
-                    }
-                    ForEach(recipes) { recipe in
-                        NavigationLink { RecipeDetail(recipe: recipe) } label: {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("\(recipe.minutes) DK").font(.caption).tracking(2).foregroundStyle(Ink.rust)
-                                Text(recipe.name).font(.system(.title2, design: .serif))
-                                let missing = recipe.missing(in: store.data.inventory)
-                                Text(missing.isEmpty ? "Tüm malzemeler rafta" : "\(missing.count) malzeme eksik →")
-                                    .font(.subheadline).foregroundStyle(.secondary)
-                            }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 12)
-                        }.buttonStyle(.plain)
-                        Divider()
-                    }
-                    }.padding(26)
-                }.background(Ink.paper).foregroundStyle(Ink.dark)
-                    .toolbar(.visible, for: .navigationBar)
-                    .navigationTitle("Ne pişse?")
-                    .navigationBarTitleDisplayMode(.inline)
+                RecipeListView()
             } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 6) {
@@ -310,6 +286,53 @@ struct KitchenView: View {
             store.data.inventory[index].location = location
         } else { store.data.inventory.append(Ingredient(name: clean, quantity: quantity, location: location)) }
         name = ""; quantity = ""
+    }
+}
+
+struct RecipeListView: View {
+    @EnvironmentObject private var store: FoodStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var includeMissingRecipes = false
+    var onSelect: ((Recipe) -> Void)? = nil
+    private var recipes: [Recipe] {
+        Recipe.all.filter { includeMissingRecipes || $0.missing(in: store.data.inventory).isEmpty }.sorted {
+            let lhs = $0.missing(in: store.data.inventory).count
+            let rhs = $1.missing(in: store.data.inventory).count
+            return lhs == rhs ? $0.id < $1.id : lhs < rhs
+        }
+    }
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Toggle("Eksik malzemeli tarifleri de göster", isOn: $includeMissingRecipes)
+                Text("Tarifler tüm bölümlerdeki malzemelerden seçilir. Miktar ve porsiyon yeterliliğini kontrol et.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if recipes.isEmpty {
+                    ContentUnavailableView("Henüz tam eşleşen tarif yok", systemImage: "carrot", description: Text("Mutfaktaki malzemeleri güncelle veya eksik malzemeli tarifleri aç."))
+                }
+                ForEach(recipes) { recipe in
+                    NavigationLink { RecipeDetail(recipe: recipe) } label: {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("\(recipe.minutes) DK").font(.caption).tracking(2).foregroundStyle(Ink.rust)
+                            Text(recipe.name).font(.system(.title2, design: .serif))
+                            let missing = recipe.missing(in: store.data.inventory)
+                            Text(missing.isEmpty ? "Tüm malzemeler rafta" : "\(missing.count) malzeme eksik →")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 12)
+                    }.buttonStyle(.plain)
+                    if let onSelect {
+                        Button("Yarının öğle yemeği olarak seç") {
+                            onSelect(recipe)
+                            dismiss()
+                        }.buttonStyle(.borderedProminent).tint(Ink.dark).foregroundStyle(.white)
+                    }
+                    Divider()
+                }
+            }.padding(26)
+        }.background(Ink.paper).foregroundStyle(Ink.dark)
+            .toolbar(.visible, for: .navigationBar)
+            .navigationTitle("Ne pişse?")
+            .navigationBarTitleDisplayMode(.inline)
     }
 }
 

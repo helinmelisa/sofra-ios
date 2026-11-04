@@ -1,4 +1,4 @@
-# NEXT
+# Sofra
 
 SwiftUI ile geliştirilen, sıcak ve sade bir yemek planlama iOS uygulaması.
 İlk çalışan prototip; iOS 17 ve üzerini destekler, iPhone 15 Pro Max ile uyumludur.
@@ -6,7 +6,7 @@ SwiftUI ile geliştirilen, sıcak ve sade bir yemek planlama iOS uygulaması.
 ## Özellikler
 
 - **Bugün:** öğün zaman çizelgesi, tamamlandı işaretleri ve 250 ml adımlarla su kaydı.
-- **Yarın:** Lamaces için evden hazırlık veya Lidl, Sequira için yemekhane planı.
+- **Yarın:** Evden çalışma, Lamaces için evden hazırlık veya Lidl, Sequira için yemekhane planı.
 - **Mutfak:** Buzdolabı, Kiler ve Dondurucu; malzeme ekleme, taşıma ve kaldırma.
 - **Tarifler:** tüm saklama alanlarındaki malzemelere göre eşleşen sekiz başlangıç tarifi.
   Varsayılan görünüm yalnızca tüm malzemeleri bulunan tarifleri gösterir; eksik malzemeli tarifler isteğe bağlı açılır.
@@ -18,11 +18,11 @@ SwiftUI ile geliştirilen, sıcak ve sade bir yemek planlama iOS uygulaması.
 
 ## Xcode ile çalıştırma
 
-1. `NEXT.xcodeproj` dosyasını aç.
-2. `NEXT` şemasını ve bir iPhone simülatörünü seçip Run'a bas.
+1. `Sofra.xcodeproj` dosyasını aç.
+2. `Sofra` şemasını ve bir iPhone simülatörünü seçip Run'a bas.
 3. Kendi iPhone 15 Pro Max cihazında çalıştırmak için telefonu Mac'e bağla,
    cihazda geliştirici modunu etkinleştir ve Xcode cihaz listesinden telefonu seç.
-4. NEXT target → Signing & Capabilities → Team bölümünde kendi Apple hesabını seç.
+4. Sofra target → Signing & Capabilities → Team bölümünde kendi Apple hesabını seç.
    Gerekirse bundle identifier değerini kendi benzersiz kimliğinle değiştir.
 
 Bağımlılık veya API anahtarı gerekmez. Projede mevcut Xcode geliştirme takımı
@@ -35,7 +35,7 @@ macOS ve Xcode komut satırı araçları gerekir:
 
 ```sh
 sh scripts/check-models.sh
-xcodebuild -project NEXT.xcodeproj -scheme NEXT -configuration Debug \
+xcodebuild -project Sofra.xcodeproj -scheme Sofra -configuration Debug \
   -sdk iphonesimulator -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
 ```
 

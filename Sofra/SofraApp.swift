@@ -6,6 +6,7 @@ import SwiftUI
     private let url: URL
 
     init() {
+        // Keep the original storage path so the rename preserves existing installations.
         url = URL.applicationSupportDirectory.appending(path: "NEXT/data.json")
         if FileManager.default.fileExists(atPath: url.path) {
             do {
@@ -30,7 +31,7 @@ import SwiftUI
     }
 }
 
-@main struct NEXTApp: App {
+@main struct SofraApp: App {
     @StateObject private var store = FoodStore()
     var body: some Scene {
         WindowGroup {

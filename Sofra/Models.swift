@@ -94,12 +94,14 @@ enum LunchPlace: String, Codable, CaseIterable, Identifiable {
     case prep = "Lamaces · evden hazırlık"
     case lidl = "Lamaces · Lidl"
     case cafeteria = "Sequira · yemekhane"
+    case home = "Ev · evden çalışma"
     var id: String { rawValue }
     var suggestion: String {
         switch self {
         case .prep: "Nohutlu öğle kasesi"
         case .lidl: "Sandviç, yoğurt ve meyve"
         case .cafeteria: "Menüyü yerinde seç"
+        case .home: "Mutfaktakilerle öğle yemeği"
         }
     }
 }
