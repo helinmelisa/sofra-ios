@@ -9,20 +9,30 @@ Built with SwiftUI for iOS 17 and later. Dynamic receipt translation requires iO
 
 ## Features
 
-- **Today:** editable breakfast, lunch, and dinner, including meal names, times, notes,
-  and recipe selection; daily completion and water tracking in 250 ml steps.
-- **Tomorrow:** work-from-home planning, packed lunches or Lidl for Lamaces,
-  and the Sequira cafeteria. A saved lunch carries over to the next day's timeline.
+- **Four-tab navigation:** My Day (**Günüm**), Recipes, Kitchen, and Shopping. Recipes are
+  directly accessible from the tab bar instead of being buried inside the kitchen.
+- **My Day:** switch between Today and Tomorrow on one screen. Today highlights the next
+  uncompleted meal, with compact rows for the others and a small water-tracking row.
+- **Contextual meal actions:** ready meals and outside food use **I ate**; homemade recipes use
+  **I cooked**. Meal selection offers Ready / Recipe / Outside sources, editable time, and optional
+  notes. Choosing a dish never consumes stock. Outside food never deducts kitchen ingredients.
+- **Tomorrow:** choose Home, Lamaces, or Sequira for lunch; Lamaces offers packed lunch or Lidl.
+  Meal and location choices save immediately. Breakfast and dinner remain optional to plan.
+  Existing lunch plans remain readable after the navigation change.
 - **Kitchen:** Fridge, Pantry, and Freezer sections with ingredient quantities and storage controls.
 - **Recipes:** 40 starter recipes spanning breakfast, main dishes, salads/bowls, and soups.
   Kitchen-based recommendations separate fully matched recipes from those missing one or two
   ingredients. Browse the full collection, search by dish or ingredient, and filter by category.
 - **Cooking plan:** choose recipes and how many portions to prepare (one by default).
   Missing ingredients automatically populate shopping; compatible quantities are combined and
-  existing kitchen stock is subtracted once across the entire plan.
+  existing kitchen stock is subtracted once across the entire plan. Selecting a recipe for a
+  daily meal also contributes its scheduled portions automatically; replacing it with ready or
+  outside food removes only that scheduled contribution. A manual batch plan covers scheduled
+  portions of the same recipe rather than duplicating their requirements.
 - **Cooking and stock:** review editable single-serving usage suggestions, then deduct the quantities
   actually used. Supports compatible g/kg and ml/l conversions and count-based units.
-  Unknown or ambiguous stock amounts must be clarified before deduction. Deductions are atomic,
+  Amounts are shown as a compact summary, with editable details expanded when correction is
+  required or requested. Unknown or ambiguous stock amounts must be clarified before deduction. Deductions are atomic,
   cannot create negative stock, and can be undone while the affected stock has not changed.
   A cooked recipe can also be added to a chosen meal in today's timeline.
 - **Leftovers:** record portions cooked separately from portions eaten now. Uneaten portions become
@@ -83,7 +93,8 @@ The command-line model checks cover ingredient matching, shopping deduplication,
 JSON compatibility, storage locations, receipt parsing, recipe eligibility, home-workday plans,
 editable daily meals, stock arithmetic, unit conversion, failed-deduction rollback,
 duplicate protection, undo, recipe-plan aggregation, purchase transfer, portion scaling,
-leftovers without double stock deduction, and persistence of older records. No XCTest or UI-test target is configured yet.
+leftovers without double stock deduction, explicit meal sources, scheduled shopping aggregation,
+next-meal selection, lunch contexts, and persistence of older records. No XCTest or UI-test target is configured yet.
 Translation model downloads and translation output require testing on a supported device.
 
 ## Current scope

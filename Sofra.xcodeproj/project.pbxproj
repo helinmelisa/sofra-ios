@@ -16,6 +16,8 @@
 		A00000000000000000000029 = {isa = PBXBuildFile; fileRef = A00000000000000000000028; };
 		A00000000000000000000031 = {isa = PBXBuildFile; fileRef = A00000000000000000000030; };
 		A00000000000000000000033 = {isa = PBXBuildFile; fileRef = A00000000000000000000032; };
+		A00000000000000000000035 = {isa = PBXBuildFile; fileRef = A00000000000000000000034; };
+		A00000000000000000000037 = {isa = PBXBuildFile; fileRef = A00000000000000000000036; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -29,6 +31,8 @@
 		A00000000000000000000028 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeCatalog.swift; sourceTree = "<group>"; };
 		A00000000000000000000030 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanningModels.swift; sourceTree = "<group>"; };
 		A00000000000000000000032 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanningViews.swift; sourceTree = "<group>"; };
+		A00000000000000000000034 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayPlanning.swift; sourceTree = "<group>"; };
+		A00000000000000000000036 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyDayView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -66,6 +70,8 @@
 				A00000000000000000000016 /* Views.swift */,
 				A00000000000000000000022 /* ReceiptImport.swift */,
 				A00000000000000000000026 /* MealManagement.swift */,
+				A00000000000000000000036 /* MyDayView.swift */,
+				A00000000000000000000034 /* DayPlanning.swift */,
 				A00000000000000000000032 /* PlanningViews.swift */,
 				A00000000000000000000030 /* PlanningModels.swift */,
 				A00000000000000000000028 /* RecipeCatalog.swift */,
@@ -143,6 +149,8 @@
 				A00000000000000000000021 /* Views.swift in Sources */,
 				A00000000000000000000023 /* ReceiptImport.swift in Sources */,
 				A00000000000000000000027 /* MealManagement.swift in Sources */,
+				A00000000000000000000037 /* MyDayView.swift in Sources */,
+				A00000000000000000000035 /* DayPlanning.swift in Sources */,
 				A00000000000000000000033 /* PlanningViews.swift in Sources */,
 				A00000000000000000000031 /* PlanningModels.swift in Sources */,
 				A00000000000000000000029 /* RecipeCatalog.swift in Sources */,

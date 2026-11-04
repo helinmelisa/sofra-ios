@@ -266,3 +266,61 @@ expectFailure { try transferValidation.transferPurchases(invalidDrafts) }
 precondition(transferValidation.inventory.isEmpty)
 expectFailure { try transferValidation.transferPurchases([transferDrafts[0], transferDrafts[0]]) }
 print("PASS: common product aliases, older data, kg/g shortfalls, preparation-only batches, leftover limits and atomic purchase validation")
+
+var daily = AppData()
+daily.inventory = []
+let todayKey = AppData.dayKey()
+let tomorrowKey = AppData.dayKey(Calendar.current.date(byAdding: .day, value: 1, to: .now)!)
+let selectedRecipe = DayMeal(time: "13:00", dish: eggs.name, note: "Evde", recipeID: eggs.id, source: .recipe, servings: 1)
+try daily.selectMeal(selectedRecipe, day: todayKey, slot: .lunch)
+precondition(daily.meal(on: todayKey, slot: .lunch).origin == .recipe)
+precondition(daily.shoppingLines.contains { $0.name == "Yumurta" })
+precondition(daily.inventory.isEmpty && daily.completed.isEmpty)
+try daily.selectMeal(selectedRecipe, day: tomorrowKey, slot: .lunch)
+precondition(daily.activeRecipePlans.first { $0.recipeID == eggs.id }?.servings == 2)
+precondition(daily.shoppingLines.first { $0.name == "Yumurta" }?.quantityText == "4 adet")
+daily.setRecipePlan(eggs, servings: 3)
+precondition(daily.activeRecipePlans.first { $0.recipeID == eggs.id }?.servings == 3) // manual batch covers the scheduled portions
+let outsideSameName = DayMeal(time: "13:15", dish: eggs.name, note: "Dışarıda", recipeID: nil, source: .outside)
+try daily.selectMeal(outsideSameName, day: todayKey, slot: .lunch)
+precondition(daily.meal(on: todayKey, slot: .lunch).recipe == nil)
+precondition(daily.scheduledRecipePortions[eggs.id] == 1)
+try daily.markOutsideEaten(day: todayKey, slot: .lunch)
+precondition(daily.inventory.isEmpty && daily.readyMeals.isEmpty)
+expectFailure { try daily.selectMeal(selectedRecipe, day: todayKey, slot: .lunch) }
+try daily.undoMeal(day: todayKey, slot: .lunch)
+precondition(!daily.completed[todayKey, default: []].contains("lunch"))
+daily.setLunchPlace(.lidl, day: tomorrowKey)
+precondition(daily.lunchPlace(on: tomorrowKey) == .lidl)
+precondition(daily.meal(on: tomorrowKey, slot: .lunch).dish == eggs.name)
+var legacyLunch = AppData()
+legacyLunch.lunches[todayKey] = LunchPlan(date: todayKey, place: .cafeteria, meal: eggs.name, note: "Eski plan")
+precondition(legacyLunch.lunchPlace(on: todayKey) == .cafeteria)
+precondition(legacyLunch.meal(on: todayKey, slot: .lunch).origin == .outside)
+precondition(legacyLunch.meal(on: todayKey, slot: .lunch).recipe == nil)
+let legacyDay = Data("{\"time\":\"13:00\",\"dish\":\"Domatesli yumurta\",\"note\":\"\",\"recipeID\":\"eggs\"}".utf8)
+let migratedDayMeal = try JSONDecoder().decode(DayMeal.self, from: legacyDay)
+precondition(migratedDayMeal.origin == .recipe)
+var featureData = AppData()
+let noon = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: .now)!
+precondition(featureData.featuredMeal(on: noon) == .lunch)
+featureData.updateMeal(outsideSameName, day: todayKey, slot: .lunch)
+let afterLunch = Calendar.current.date(bySettingHour: 14, minute: 0, second: 0, of: .now)!
+precondition(featureData.featuredMeal(on: afterLunch) == .lunch)
+try featureData.markOutsideEaten(day: todayKey, slot: .lunch)
+precondition(featureData.featuredMeal(on: afterLunch) == .dinner)
+featureData.completed[todayKey] = Set(MealSlot.allCases.map(\.rawValue))
+precondition(featureData.featuredMeal(on: afterLunch) == nil)
+var readySelection = AppData()
+readySelection.inventory = []
+readySelection.preparedMeals = [PreparedMeal(dish: "Kalan yemek", recipeID: eggs.id, initialPortions: 2, remaining: 2)]
+try readySelection.selectMeal(selectedRecipe, day: tomorrowKey, slot: .dinner)
+precondition(!readySelection.shoppingLines.isEmpty)
+let existingReady = readySelection.readyMeals[0]
+try readySelection.selectMeal(DayMeal(time: "19:30", dish: existingReady.dish, note: "", recipeID: nil, preparedID: existingReady.id, source: .prepared), day: tomorrowKey, slot: .dinner)
+precondition(readySelection.shoppingLines.isEmpty)
+precondition(readySelection.readyMeals[0].remaining == 2) // selecting is not eating
+let dailyRoundTrip = try JSONDecoder().decode(AppData.self, from: JSONEncoder().encode(daily))
+precondition(dailyRoundTrip.lunchPlace(on: tomorrowKey) == .lidl)
+precondition(dailyRoundTrip.meal(on: todayKey, slot: .lunch).origin == .outside)
+print("PASS: unified day flow, meal sources, automatic shopping, scheduled portion aggregation, context persistence, legacy lunch, featured meal and stock-free outside/ready planning")

@@ -49,7 +49,14 @@ struct PurchaseDraft: Identifiable {
 }
 
 extension AppData {
-    var activeRecipePlans: [RecipePlan] { (recipePlans ?? []).filter { $0.servings > 0 && $0.recipe != nil } }
+    var activeRecipePlans: [RecipePlan] {
+        var plans = (recipePlans ?? []).filter { $0.servings > 0 && $0.recipe != nil }
+        for (recipeID, servings) in scheduledRecipePortions.sorted(by: { $0.key < $1.key }) {
+            if let index = plans.firstIndex(where: { $0.recipeID == recipeID }) { plans[index].servings = max(plans[index].servings, servings) }
+            else { plans.append(RecipePlan(recipeID: recipeID, servings: servings)) }
+        }
+        return plans
+    }
     var readyMeals: [PreparedMeal] { (preparedMeals ?? []).filter { $0.remaining > 0 }.sorted { $0.createdAt < $1.createdAt } }
 
     mutating func setRecipePlan(_ recipe: Recipe, servings: Int) {
@@ -58,7 +65,10 @@ extension AppData {
         if let index = recipePlans?.firstIndex(where: { $0.recipeID == recipe.id }) { recipePlans?[index].servings = count }
         else { recipePlans?.append(RecipePlan(recipeID: recipe.id, servings: count)) }
     }
-    mutating func removeRecipePlan(_ id: String) { recipePlans?.removeAll { $0.recipeID == id } }
+    mutating func removeRecipePlan(_ id: String) {
+        recipePlans?.removeAll { $0.recipeID == id }
+        dailyRecipeLinks = dailyRecipeLinks?.filter { $0.value.recipeID != id }
+    }
 
     /// Presence of stock with unknown or incompatible units is surfaced rather than inventing a conversion.
     var planStockWarnings: [String] {

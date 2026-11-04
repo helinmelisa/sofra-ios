@@ -63,7 +63,7 @@ struct RecipeListView: View {
             }.padding(26)
         }.background(Ink.paper).foregroundStyle(Ink.dark)
             .toolbar(.visible, for: .navigationBar)
-            .navigationTitle("Ne pişse?").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Tarifler").navigationBarTitleDisplayMode(.inline)
             .sheet(item: $planning) { RecipePlanSheet(recipe: $0) }
     }
     private func recipeRow(_ recipe: Recipe) -> some View {
@@ -165,7 +165,7 @@ struct RecipePlanView: View {
                             NavigationLink(recipe.name) { RecipeDetail(recipe: recipe) }.font(.system(.title2, design: .serif))
                             Stepper("\(plan.servings) porsiyon", value: Binding(get: {
                                 store.data.activeRecipePlans.first { $0.id == plan.id }?.servings ?? 1
-                            }, set: { store.data.setRecipePlan(recipe, servings: $0) }), in: 1...8)
+                            }, set: { store.data.setRecipePlan(recipe, servings: $0) }), in: min(8, max(1, store.data.scheduledRecipePortions[recipe.id] ?? 1))...max(8, plan.servings))
                             Button("Plandan çıkar", role: .destructive) { store.data.removeRecipePlan(plan.id) }.font(.caption)
                             Divider()
                         }
@@ -395,6 +395,7 @@ struct PreparedUseSheet: View {
     @EnvironmentObject private var store: FoodStore
     @Environment(\.dismiss) private var dismiss
     let request: PreparedUseRequest
+    var onSaved: (() -> Void)? = nil
     @State private var portions = 1
     @State private var error: String?
     private var meal: PreparedMeal? { store.data.preparedMeals?.first { $0.id == request.preparedID } }
@@ -410,7 +411,7 @@ struct PreparedUseSheet: View {
                     ToolbarItem(placement: .cancellationAction) { Button("Vazgeç") { dismiss() } }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Kaydet") {
-                            do { try store.data.eatPrepared(request.preparedID, portions: portions, day: request.day, slot: request.slot); dismiss() }
+                            do { try store.data.eatPrepared(request.preparedID, portions: portions, day: request.day, slot: request.slot); onSaved?(); dismiss() }
                             catch { self.error = error.localizedDescription }
                         }.disabled((meal?.remaining ?? 0) < portions)
                     }

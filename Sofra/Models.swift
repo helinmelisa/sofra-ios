@@ -131,6 +131,8 @@ struct AppData: Codable {
     var recipeShoppingChecks: [String: String]? = nil
     var preparedMeals: [PreparedMeal]? = nil
     var leftoverUses: [LeftoverUse]? = nil
+    var lunchContexts: [String: LunchPlace]? = nil
+    var dailyRecipeLinks: [String: DailyRecipeLink]? = nil
 
     static func dayKey(_ date: Date = .now) -> String {
         let formatter = DateFormatter()
@@ -287,7 +289,9 @@ struct DayMeal: Codable {
     var note: String
     var recipeID: String?
     var preparedID: UUID? = nil
-    var recipe: Recipe? { guard preparedID == nil else { return nil }; return Recipe.all.first { $0.id == recipeID || Recipe.key($0.name) == Recipe.key(dish) } }
+    var source: MealOrigin? = nil
+    var servings: Int? = nil
+    var recipe: Recipe? { guard preparedID == nil, source != .outside else { return nil }; return Recipe.all.first { $0.id == recipeID || Recipe.key($0.name) == Recipe.key(dish) } }
 }
 
 struct StockAmount: Equatable, Codable {
@@ -353,13 +357,14 @@ extension AppData {
     func meal(on day: String, slot: MealSlot) -> DayMeal {
         if let stored = dayMeals?[day]?[slot.rawValue] { return stored }
         if slot == .lunch, let lunch = lunches[day] {
-            return DayMeal(time: slot.time, dish: lunch.meal, note: [lunch.place.rawValue, lunch.note].filter { !$0.isEmpty }.joined(separator: " · "), recipeID: nil)
+            return DayMeal(time: slot.time, dish: lunch.meal, note: lunch.note, recipeID: nil, source: lunch.place == .lidl || lunch.place == .cafeteria ? .outside : .recipe)
         }
         return DayMeal(time: slot.time, dish: "", note: "", recipeID: nil)
     }
     mutating func updateMeal(_ meal: DayMeal, day: String, slot: MealSlot) {
         if dayMeals == nil { dayMeals = [:] }
         dayMeals?[day, default: [:]][slot.rawValue] = meal
+        linkMealShopping(meal, day: day, slot: slot)
     }
     func cooking(on day: String, slot: MealSlot) -> CookingRecord? {
         cookingHistory?.last { !$0.undone && $0.day == day && $0.slot == slot.rawValue }
@@ -401,10 +406,10 @@ extension AppData {
         for updated in updates { if let index = inventory.firstIndex(where: { $0.id == updated.id }) { inventory[index] = updated } }
         if cookingHistory == nil { cookingHistory = [] }
         var record = CookingRecord(id: id, dish: dish, day: day, slot: slot?.rawValue, before: previous, after: updates)
-        if let recipeID, let plan = activeRecipePlans.first(where: { $0.recipeID == recipeID }) {
+        if let recipeID, let plan = recipePlans?.first(where: { $0.recipeID == recipeID }) {
             record.planBefore = plan
             record.planRemaining = max(0, plan.servings - servings)
-            if plan.servings <= servings { removeRecipePlan(recipeID) }
+            if plan.servings <= servings { recipePlans?.removeAll { $0.recipeID == recipeID } }
             else if let recipe = plan.recipe { setRecipePlan(recipe, servings: plan.servings - servings) }
         }
         if servings > eatenNow {
@@ -427,7 +432,7 @@ extension AppData {
             }
         }
         if let plan = record.planBefore {
-            let current = activeRecipePlans.first { $0.recipeID == plan.recipeID }?.servings ?? 0
+            let current = recipePlans?.first { $0.recipeID == plan.recipeID }?.servings ?? 0
             guard current == record.planRemaining else { throw KitchenError.invalid("Pişirme planı sonradan değişti. Mutfak stoklarını elle kontrol et.") }
         }
         for after in record.after {

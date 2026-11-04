@@ -95,11 +95,18 @@ struct CookingSheet: View {
     var onSaved: ((UUID) -> Void)? = nil
     @State private var drafts: [UsageDraft] = []
     @State private var loaded = false
+    @State private var editingAmounts = false
     @State private var servings = 1
     @State private var eatenNow = 1
     @State private var logToSlot: MealSlot?
     @State private var error: String?
     private var selected: Bool { drafts.contains(where: \.selected) }
+    private var requiresReview: Bool {
+        drafts.filter(\.selected).contains { draft in
+            guard let available = StockAmount.parse(draft.available), let used = StockAmount.parse(draft.used) else { return true }
+            return available.dimension != used.dimension || used.value <= 0 || used.baseValue > available.baseValue
+        }
+    }
     var body: some View {
         NavigationStack {
             Form {
@@ -127,31 +134,36 @@ struct CookingSheet: View {
                     }
                     if drafts.isEmpty { Text("Mutfakta malzeme yok. Önce stoklarını ekle.") }
                 }
+                Button(editingAmounts ? "Miktarları gizle" : "Miktarları düzenle") { editingAmounts.toggle() }
                 ForEach($drafts) { $draft in
-                    Section(draft.name) {
-                        Toggle("Kullandım", isOn: $draft.selected)
-                        if draft.selected {
-                            LabeledContent("Mevcut stok") {
-                                TextField("Ör. 500 g", text: $draft.available).multilineTextAlignment(.trailing)
-                            }
-                            LabeledContent("Kullandığım") {
-                                TextField("Ör. 100 g", text: $draft.used).multilineTextAlignment(.trailing)
-                            }
-                            if let available = StockAmount.parse(draft.available), let used = StockAmount.parse(draft.used), available.dimension == used.dimension, used.value > 0, used.baseValue <= available.baseValue {
-                                let left = StockAmount(value: available.value - used.converted(to: available.unit), unit: available.unit)
-                                Text("Kalan: \(left.text)").font(.caption).foregroundStyle(.secondary)
+                    if editingAmounts {
+                        Section(draft.name) {
+                            Toggle("Kullandım", isOn: $draft.selected)
+                            if draft.selected {
+                                LabeledContent("Mevcut stok") {
+                                    TextField("Ör. 500 g", text: $draft.available).multilineTextAlignment(.trailing)
+                                }
+                                LabeledContent("Kullandığım") {
+                                    TextField("Ör. 100 g", text: $draft.used).multilineTextAlignment(.trailing)
+                                }
+                                if let available = StockAmount.parse(draft.available), let used = StockAmount.parse(draft.used), available.dimension == used.dimension, used.value > 0, used.baseValue <= available.baseValue {
+                                    let left = StockAmount(value: available.value - used.converted(to: available.unit), unit: available.unit)
+                                    Text("Kalan: \(left.text)").font(.caption).foregroundStyle(.secondary)
+                                }
                             }
                         }
+                    } else if draft.selected {
+                        LabeledContent(draft.name, value: draft.used)
                     }
                 }
                 if let error { Section { Text(error).foregroundStyle(.red) } }
                 if request.day != nil {
-                    Section {
+                    DisclosureGroup("Mutfaktan malzeme kullanmadıysan") {
                         Button("Stok kullanmadan tamamla") {
                             if let day = request.day, let slot = request.slot { store.data.completed[day, default: []].insert(slot.rawValue) }
                             dismiss()
                         }
-                    } footer: { Text("Dışarıda yediysen veya bu öğünde mutfaktan malzeme kullanmadıysan.") }
+                    }
                 }
             }
             .navigationTitle("Pişirdim")
@@ -159,7 +171,7 @@ struct CookingSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Vazgeç") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Stoktan düş") {
+                    Button("Pişirmeyi kaydet") {
                         do {
                             let slot = request.slot ?? logToSlot
                             let day = request.day ?? (slot == nil ? nil : AppData.dayKey())
@@ -167,6 +179,8 @@ struct CookingSheet: View {
                             if request.day == nil, let day, let slot {
                                 var meal = store.data.meal(on: day, slot: slot)
                                 meal.preparedID = nil
+                                meal.source = .recipe
+                                meal.servings = servings
                                 meal.dish = request.dish
                                 meal.recipeID = request.recipe?.id
                                 store.data.updateMeal(meal, day: day, slot: slot)
@@ -181,9 +195,10 @@ struct CookingSheet: View {
             .onChange(of: servings) { _, count in
                 eatenNow = min(eatenNow, count)
                 if request.recipe != nil { drafts = store.data.usage(for: request.recipe, servings: count) }
+                if requiresReview { editingAmounts = true }
             }
             .onAppear {
-                if !loaded { servings = request.servings; drafts = store.data.usage(for: request.recipe, servings: request.servings); loaded = true }
+                if !loaded { servings = request.servings; drafts = store.data.usage(for: request.recipe, servings: request.servings); loaded = true; editingAmounts = request.recipe == nil || requiresReview }
             }
         }.tint(Ink.dark)
     }
