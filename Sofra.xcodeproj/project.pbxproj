@@ -12,6 +12,7 @@
 		A00000000000000000000021 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000016 /* Views.swift */; };
 		A00000000000000000000023 = {isa = PBXBuildFile; fileRef = A00000000000000000000022; };
 		A00000000000000000000025 = {isa = PBXBuildFile; fileRef = A00000000000000000000024; };
+		A00000000000000000000027 = {isa = PBXBuildFile; fileRef = A00000000000000000000026; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,6 +22,7 @@
 		A00000000000000000000016 /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		A00000000000000000000022 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptImport.swift; sourceTree = "<group>"; };
 		A00000000000000000000024 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A00000000000000000000026 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MealManagement.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -57,6 +59,7 @@
 				A00000000000000000000015 /* Models.swift */,
 				A00000000000000000000016 /* Views.swift */,
 				A00000000000000000000022 /* ReceiptImport.swift */,
+				A00000000000000000000026 /* MealManagement.swift */,
 				A00000000000000000000024 /* Assets.xcassets */,
 			);
 			path = Sofra;
@@ -130,6 +133,7 @@
 				A00000000000000000000020 /* Models.swift in Sources */,
 				A00000000000000000000021 /* Views.swift in Sources */,
 				A00000000000000000000023 /* ReceiptImport.swift in Sources */,
+				A00000000000000000000027 /* MealManagement.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -163,7 +167,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = TZ2X49FYC4;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Sofra;
+				INFOPLIST_KEY_CFBundleDisplayName = sofra;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = com.helin.nextfood;
@@ -180,7 +184,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = TZ2X49FYC4;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Sofra;
+				INFOPLIST_KEY_CFBundleDisplayName = sofra;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = com.helin.nextfood;

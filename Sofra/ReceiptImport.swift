@@ -2,6 +2,7 @@ import SwiftUI
 import PhotosUI
 import Vision
 import ImageIO
+import Translation
 
 /// Reads on-device and joins receipt columns by vertical position before parsing.
 enum ReceiptOCR {
@@ -42,6 +43,7 @@ struct ReceiptImportView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var hasRead = false
+    @State private var translating = false
     @State private var loadTask: Task<Void, Never>?
     private var selectedCount: Int { items.filter { $0.selected && !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count }
 
@@ -52,14 +54,20 @@ struct ReceiptImportView: View {
                     PhotosPicker(selection: $photo, matching: .images) {
                         Label(hasRead ? "Başka fiş seç" : "Fiş fotoğrafı seç", systemImage: "doc.text.viewfinder")
                             .frame(minHeight: 44)
-                    }.disabled(busy)
+                    }.disabled(busy || translating)
                     if busy { ProgressView("Fiş okunuyor…") }
                     if let error { Text(error).foregroundStyle(.red) }
                 } footer: {
-                    Text("Portekizce fişlerdeki desteklenen ürünler Türkçeye çevrilir. Görsel cihazda okunur. Birden fazla ekran görüntüsü varsa sırayla ekle.")
+                    Text("Portekizce ürünler cihazda Türkçeye çevrilir. Dil paketleri ilk kullanımda indirilebilir. Birden fazla ekran görüntüsü varsa sırayla ekle.")
                 }
                 if hasRead && !busy {
                     Section {
+                        if #available(iOS 18.0, *) {
+                            ReceiptTranslationControl(items: $items, translating: $translating)
+                        } else {
+                            Text("Dinamik çeviri iOS 18 veya üstünü gerektirir. Bu cihazda yalnızca kayıtlı ürün sözlüğü kullanılıyor.")
+                                .font(.caption)
+                        }
                         Text("\(selectedCount) ürün seçili. Adları, miktarları ve saklama alanlarını kontrol et.")
                         Text("Aynı ürün mutfakta varsa eski miktar korunur; fişteki miktar yanına eklenir ve saklama alanı değiştirilmez.")
                             .font(.caption).foregroundStyle(.secondary)
@@ -69,11 +77,15 @@ struct ReceiptImportView: View {
                         Section {
                             Toggle("Mutfağa ekle", isOn: $item.selected)
                             Text(item.source).font(.caption).foregroundStyle(.secondary)
+                            if item.canonicalName == nil && item.translated {
+                                Text("Yeni ürün çevrildi. Gıda olduğunu ve saklama alanını kontrol edip eklemek istediğini seç.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
                             if !item.translated {
                                 Text("Çeviri bulunamadı. Ürün adını düzenleyip eklemek istediğini seç.")
                                     .font(.caption).foregroundStyle(.orange)
                             }
-                            TextField("Türkçe ürün adı", text: $item.name)
+                            TextField("Türkçe ürün adı", text: $item.name).disabled(translating)
                             TextField("Miktar · bilinmiyorsa boş bırak", text: $item.quantity)
                             Picker("Saklama alanı", selection: $item.location) {
                                 ForEach(StorageLocation.allCases) { area in Text(area.rawValue).tag(area) }
@@ -90,7 +102,7 @@ struct ReceiptImportView: View {
                     Button("Ekle (\(selectedCount))") {
                         store.data.importReceipt(items)
                         dismiss()
-                    }.disabled(busy || selectedCount == 0)
+                    }.disabled(busy || translating || selectedCount == 0)
                 }
             }
             .onChange(of: photo) { _, selected in
@@ -114,5 +126,49 @@ struct ReceiptImportView: View {
             }
             .onDisappear { loadTask?.cancel() }
         }.tint(Ink.dark)
+    }
+}
+
+
+@available(iOS 18.0, *)
+private struct ReceiptTranslationControl: View {
+    @Binding var items: [ReceiptItem]
+    @Binding var translating: Bool
+    @State private var configuration: TranslationSession.Configuration?
+    @State private var message = ""
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if translating { ProgressView("Ürünler Türkçeye çevriliyor…") }
+            if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.secondary) }
+            Button("Ürünleri yeniden çevir") { start() }.disabled(translating || items.isEmpty)
+        }
+        .task { if !items.isEmpty { start() } }
+        .translationTask(configuration) { session in
+            do {
+                try await session.prepareTranslation()
+                let batch = items.map { TranslationSession.Request(sourceText: $0.source, clientIdentifier: $0.id.uuidString) }
+                let responses = try await session.translations(from: batch)
+                try Task.checkCancellation()
+                for response in responses {
+                    if let id = response.clientIdentifier, let index = items.firstIndex(where: { $0.id.uuidString == id }) {
+                        let text = response.targetText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !text.isEmpty { items[index].name = text; items[index].translated = true }
+                    }
+                }
+                message = "Cihaz içi çeviri tamamlandı. Yeni ürünlerin adını ve saklama alanını kontrol et."
+            } catch is CancellationError {
+                message = "Çeviri iptal edildi. Ürün adlarını elle düzenleyebilir veya tekrar deneyebilirsin."
+            } catch {
+                message = "Dinamik çeviri tamamlanamadı. Portekizce–Türkçe dil paketlerini ve bağlantını kontrol et; tekrar deneyebilir veya adları elle düzenleyebilirsin."
+            }
+            translating = false
+        }
+    }
+    private func start() {
+        translating = true
+        message = ""
+        if configuration == nil {
+            configuration = .init(source: Locale.Language(identifier: "pt"), target: Locale.Language(identifier: "tr"))
+        } else { configuration?.invalidate() }
     }
 }

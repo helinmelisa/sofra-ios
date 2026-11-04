@@ -78,3 +78,75 @@ precondition(homeDecoded.lunches[today]?.meal == "Domatesli yumurta")
 let oldPlace = try JSONDecoder().decode(LunchPlace.self, from: Data("\"Lamaces · evden hazırlık\"".utf8))
 precondition(oldPlace == .prep)
 print("PASS: home workday plan and existing office plan compatibility")
+
+func expectFailure(_ action: () throws -> Void) {
+    do { try action(); preconditionFailure("Expected validation failure") }
+    catch { }
+}
+precondition(StockAmount.parse("0,386 kg")?.baseValue == 386)
+precondition(StockAmount.parse("1 l")?.baseValue == 1000)
+precondition(StockAmount.parse("1 kase; fişten +1") == nil)
+precondition(StockAmount.parse("-1 g") == nil)
+precondition(StockAmount(value: 10, unit: "g").text == "10 g")
+precondition(StockAmount(value: 0, unit: "adet").text == "0 adet")
+var cooked = AppData()
+cooked.inventory = [Ingredient(name: "Yumurta", quantity: "4 adet"), Ingredient(name: "Domates", quantity: "3 adet"), Ingredient(name: "Zeytinyağı", quantity: "0,5 l")]
+let originalStock = cooked.inventory.map(\.quantity)
+let eggDrafts = cooked.usage(for: eggs)
+let cookingID = UUID()
+try cooked.cook(id: cookingID, dish: eggs.name, drafts: eggDrafts, day: today, slot: .dinner)
+precondition(cooked.inventory.map(\.quantity) == ["2 adet", "2 adet", "0,49 l"])
+precondition(cooked.completed[today, default: []].contains("dinner"))
+expectFailure { try cooked.cook(id: cookingID, dish: eggs.name, drafts: eggDrafts) }
+expectFailure { try cooked.cook(id: UUID(), dish: eggs.name, drafts: cooked.usage(for: eggs), day: today, slot: .dinner) }
+try cooked.undoCooking(cookingID)
+precondition(cooked.inventory.map(\.quantity) == originalStock)
+precondition(!cooked.completed[today, default: []].contains("dinner"))
+precondition(cooked.cooking(on: today, slot: .dinner) == nil)
+var badDrafts = cooked.usage(for: eggs)
+badDrafts[1].used = "99 adet"
+expectFailure { try cooked.cook(id: UUID(), dish: eggs.name, drafts: badDrafts) }
+precondition(cooked.inventory.map(\.quantity) == originalStock)
+badDrafts = cooked.usage(for: eggs)
+badDrafts[0].used = "1 g"
+expectFailure { try cooked.cook(id: UUID(), dish: eggs.name, drafts: badDrafts) }
+precondition(cooked.inventory.map(\.quantity) == originalStock)
+badDrafts = cooked.usage(for: eggs)
+badDrafts[0].used = "0 adet"
+expectFailure { try cooked.cook(id: UUID(), dish: eggs.name, drafts: badDrafts) }
+let id2 = UUID()
+try cooked.cook(id: id2, dish: eggs.name, drafts: cooked.usage(for: eggs))
+cooked.inventory[0].quantity = "7 adet"
+expectFailure { try cooked.undoCooking(id2) }
+precondition(cooked.inventory[1].quantity == "2 adet")
+let edited = DayMeal(time: "14:15", dish: "Domatesli yumurta", note: "Geç öğle", recipeID: "eggs")
+cooked.updateMeal(edited, day: today, slot: .lunch)
+precondition(cooked.meal(on: today, slot: .lunch).time == "14:15")
+let cookedDecoded = try JSONDecoder().decode(AppData.self, from: JSONEncoder().encode(cooked))
+precondition(cookedDecoded.meal(on: today, slot: .lunch).note == "Geç öğle")
+precondition(cookedDecoded.meal(on: today, slot: .lunch).recipe?.id == "eggs")
+precondition(cookedDecoded.cookingHistory?.count == 2)
+var oldJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(cooked)) as! [String: Any]
+oldJSON.removeValue(forKey: "dayMeals")
+oldJSON.removeValue(forKey: "cookingHistory")
+let oldData = try JSONDecoder().decode(AppData.self, from: JSONSerialization.data(withJSONObject: oldJSON))
+precondition(oldData.dayMeals == nil && oldData.cookingHistory == nil)
+var zeroStock = AppData()
+zeroStock.inventory[0].quantity = "0 adet"
+precondition(eggs.missing(in: zeroStock.inventory).contains("Yumurta"))
+var translated = imported[3]
+translated.name = "Doğal Yunan yoğurdu"
+var dynamicKitchen = AppData()
+dynamicKitchen.inventory = []
+dynamicKitchen.importReceipt([translated])
+precondition(dynamicKitchen.inventory[0].recipeName == "Yoğurt")
+precondition(!Recipe.all.first { $0.id == "yogurt" }!.missing(in: dynamicKitchen.inventory).contains("Yoğurt"))
+var ambiguous = AppData()
+let ambiguousDrafts = ambiguous.usage(for: eggs)
+expectFailure { try ambiguous.cook(id: UUID(), dish: eggs.name, drafts: ambiguousDrafts) }
+precondition(ambiguous.inventory[0].quantity == "4 adet")
+var clarified = ambiguousDrafts
+if let oil = clarified.firstIndex(where: { $0.name == "Zeytinyağı" }) { clarified[oil].available = "500 ml" }
+try ambiguous.cook(id: UUID(), dish: eggs.name, drafts: clarified)
+precondition(ambiguous.inventory.first { $0.name == "Zeytinyağı" }?.quantity == "490 ml")
+print("PASS: meal editing, cooking, stock conversions, atomic validation, duplicate protection, undo, zero stock, migration and translated recipe aliases")

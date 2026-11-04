@@ -34,7 +34,7 @@ private struct Journal<Content: View>: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     HStack {
-                        Text("SOFRA").font(.system(.headline, design: .serif)).tracking(4)
+                        Text("sofra").font(.system(.headline, design: .serif)).tracking(4)
                         Spacer()
                         Text(eyebrow).font(.caption).tracking(2)
                     }
@@ -61,19 +61,18 @@ struct TodayView: View {
     @EnvironmentObject private var store: FoodStore
     @Environment(\.scenePhase) private var scenePhase
     @State private var now = Date.now
+    @State private var editingMeal: MealEditRequest?
+    @State private var cookingMeal: CookingRequest?
+    @State private var mealError: String?
     private var key: String { AppData.dayKey(now) }
     private var water: Int { store.data.water[key, default: 0] }
     var body: some View {
         Journal(eyebrow: now.formatted(.dateTime.day().month(.abbreviated)).uppercased(), title: "Bugün,\nsana göre.") {
             Caption(text: "Günün akışı")
-            meal("breakfast", time: "08:45", title: "Kahvaltı", detail: "Yoğurtlu yulaf", icon: "sunrise")
-            Divider()
-            meal("lunch", time: "13:00", title: "Öğle arası",
-                 detail: store.data.lunches[key].map { "\($0.meal) · \($0.place.rawValue)" } ?? "Henüz plan yok · Yarın ekranından bir sonraki öğle arasını planla.", icon: "fork.knife")
-            Divider()
-            meal("dinner", time: "19:30", title: "Evde akşam", detail: "Mutfaktaki malzemelerden bir tarif seç", icon: "moon")
-            Text("Kahvaltı ve akşam satırları başlangıç örnekleridir.")
-                .font(.caption).foregroundStyle(.secondary)
+            ForEach(MealSlot.allCases) { slot in
+                meal(slot)
+                Divider()
+            }
             VStack(alignment: .leading, spacing: 16) {
                 Caption(text: "Bir yudum ara")
                 HStack(alignment: .firstTextBaseline) {
@@ -93,29 +92,47 @@ struct TodayView: View {
                 Text("Her dokunuş bir bardak. Günlük kayıt gece yenilenir.").font(.caption).foregroundStyle(.secondary)
             }.padding(22).background(Ink.dark.opacity(0.06))
         }
+        .sheet(item: $editingMeal) { request in MealEditorView(request: request) }
+        .sheet(item: $cookingMeal) { request in CookingSheet(request: request) }
+        .alert("Öğün güncellenemedi", isPresented: Binding(get: { mealError != nil }, set: { if !$0 { mealError = nil } })) {
+            Button("Tamam") { mealError = nil }
+        } message: { Text(mealError ?? "") }
         .onChange(of: scenePhase) { _, phase in if phase == .active { now = .now } }
         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { now = $0 }
     }
 
-    private func meal(_ id: String, time: String, title: String, detail: String, icon: String) -> some View {
-        let done = store.data.completed[key, default: []].contains(id)
-        return HStack(alignment: .top, spacing: 16) {
+    private func meal(_ slot: MealSlot) -> some View {
+        let item = store.data.meal(on: key, slot: slot)
+        let done = store.data.completed[key, default: []].contains(slot.rawValue)
+        return HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 10) {
-                Text(time).font(.caption.monospacedDigit())
-                Image(systemName: icon).font(.title2)
+                Text(item.time).font(.caption.monospacedDigit())
+                Image(systemName: slot.icon).font(.title2)
             }.frame(width: 48)
             VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(.system(.title2, design: .serif))
-                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                Text(slot.title).font(.system(.title2, design: .serif))
+                Text(item.dish.isEmpty ? "Yemek seç veya planını yaz" : item.dish)
+                    .font(.subheadline).foregroundStyle(.secondary)
+                if !item.note.isEmpty { Text(item.note).font(.caption).foregroundStyle(.secondary) }
+                Button {
+                    editingMeal = MealEditRequest(day: key, slot: slot, meal: item)
+                } label: { Label("Düzenle", systemImage: "pencil").font(.caption).frame(minHeight: 36) }
             }
             Spacer(minLength: 0)
             Button {
-                if done { store.data.completed[key, default: []].remove(id) }
-                else { store.data.completed[key, default: []].insert(id) }
+                if done {
+                    if let cooked = store.data.cooking(on: key, slot: slot) {
+                        do { try store.data.undoCooking(cooked.id) } catch { mealError = error.localizedDescription }
+                    } else { store.data.completed[key, default: []].remove(slot.rawValue) }
+                } else if item.dish.isEmpty {
+                    editingMeal = MealEditRequest(day: key, slot: slot, meal: item)
+                } else {
+                    cookingMeal = CookingRequest(dish: item.dish, recipe: item.recipe, day: key, slot: slot)
+                }
             } label: {
                 Image(systemName: done ? "checkmark.circle.fill" : "circle")
                     .font(.title2).frame(width: 44, height: 44)
-            }.accessibilityLabel("\(title): \(done ? "tamamlandı, geri al" : "tamamla")")
+            }.accessibilityLabel("\(slot.title): \(done ? "tamamlanmayı ve stok düşümünü geri al" : "tamamla")")
         }.padding(.vertical, 8)
     }
 }
@@ -126,6 +143,7 @@ struct TomorrowView: View {
     @State private var meal = ""
     @State private var note = ""
     @State private var saved = false
+    @State private var loadedDay: String?
     @State private var targetDate = Calendar.current.date(byAdding: .day, value: 1, to: .now)!
     private var key: String { AppData.dayKey(targetDate) }
 
@@ -175,6 +193,8 @@ struct TomorrowView: View {
         }
         .onAppear {
             targetDate = Calendar.current.date(byAdding: .day, value: 1, to: .now)!
+            guard loadedDay != key else { return }
+            loadedDay = key
             if let plan = store.data.lunches[key] {
                 place = plan.place; meal = plan.meal; note = plan.note
             } else { meal = place.suggestion }
@@ -293,6 +313,7 @@ struct RecipeListView: View {
     @EnvironmentObject private var store: FoodStore
     @Environment(\.dismiss) private var dismiss
     @State private var includeMissingRecipes = false
+    var selectionLabel = "Yarının öğle yemeği olarak seç"
     var onSelect: ((Recipe) -> Void)? = nil
     private var recipes: [Recipe] {
         Recipe.all.filter { includeMissingRecipes || $0.missing(in: store.data.inventory).isEmpty }.sorted {
@@ -321,7 +342,7 @@ struct RecipeListView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 12)
                     }.buttonStyle(.plain)
                     if let onSelect {
-                        Button("Yarının öğle yemeği olarak seç") {
+                        Button(selectionLabel) {
                             onSelect(recipe)
                             dismiss()
                         }.buttonStyle(.borderedProminent).tint(Ink.dark).foregroundStyle(.white)
@@ -340,6 +361,9 @@ struct RecipeDetail: View {
     @EnvironmentObject private var store: FoodStore
     let recipe: Recipe
     @State private var added = false
+    @State private var cooking: CookingRequest?
+    @State private var lastCookingID: UUID?
+    @State private var stockError: String?
     private var missing: [String] { recipe.missing(in: store.data.inventory) }
     var body: some View {
         ScrollView {
@@ -354,6 +378,15 @@ struct RecipeDetail: View {
                         store.data.addShopping(missing); added = true
                     }.buttonStyle(.borderedProminent).tint(Ink.dark).foregroundStyle(.white)
                 }
+                Button("Pişirdim · stoktan düş") {
+                    cooking = CookingRequest(dish: recipe.name, recipe: recipe)
+                }.buttonStyle(.borderedProminent).tint(Ink.dark).foregroundStyle(.white)
+                if let id = lastCookingID {
+                    Button("Son stok düşümünü geri al") {
+                        do { try store.data.undoCooking(id); lastCookingID = nil }
+                        catch { stockError = error.localizedDescription }
+                    }
+                }
                 Divider()
                 ForEach(Array(recipe.steps.enumerated()), id: \.offset) { index, step in
                     HStack(alignment: .top, spacing: 16) {
@@ -367,6 +400,10 @@ struct RecipeDetail: View {
         }.background(Ink.paper).foregroundStyle(Ink.dark)
             .toolbar(.visible, for: .navigationBar)
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $cooking) { request in CookingSheet(request: request) { lastCookingID = $0 } }
+            .alert("Stok güncellenemedi", isPresented: Binding(get: { stockError != nil }, set: { if !$0 { stockError = nil } })) {
+                Button("Tamam") { stockError = nil }
+            } message: { Text(stockError ?? "") }
     }
 }
 
