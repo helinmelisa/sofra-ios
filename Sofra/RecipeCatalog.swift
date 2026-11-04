@@ -54,13 +54,17 @@ extension Recipe {
         if id.contains("soup") { return .soup }
         return .main
     }
-    static func canonicalIngredientName(_ name: String) -> String {
-        let aliases = ["Yarım yağlı süt": "Süt", "Tam yağlı süt": "Süt", "Yağsız süt": "Süt", "Rendelenmiş peynir": "Peynir", "Beyaz peynir": "Peynir", "Kaşar peyniri": "Peynir", "Krema (crème fraîche)": "Krema", "Kırmızı patates": "Patates"]
-        return aliases.first { key($0.key) == key(name) }?.value ?? name
+    private static let aliases: [String: String] = {
+        let values = ["Yarım yağlı süt": "Süt", "Tam yağlı süt": "Süt", "Yağsız süt": "Süt", "Rendelenmiş peynir": "Peynir", "Beyaz peynir": "Peynir", "Kaşar peyniri": "Peynir", "Krema (crème fraîche)": "Krema", "Kırmızı patates": "Patates"]
+        return Dictionary(uniqueKeysWithValues: values.map { (key($0.key), $0.value) })
+    }()
+    static func canonicalIngredientName(_ name: String) -> String { aliases[key(name)] ?? name }
+    static func ingredientKey(_ name: String) -> String {
+        let normalized = key(name)
+        return aliases[normalized].map { key($0) } ?? normalized
     }
-    static func ingredientKey(_ name: String) -> String { key(canonicalIngredientName(name)) }
     func amount(for ingredient: String, servings: Int = 1) -> StockAmount? {
-        guard var amount = StockAmount.parse(RecipeCatalog.amounts[Self.canonicalIngredientName(ingredient)] ?? "") else { return nil }
+        guard var amount = customAmounts?[Self.ingredientKey(ingredient)] ?? StockAmount.parse(RecipeCatalog.amounts[Self.canonicalIngredientName(ingredient)] ?? "") else { return nil }
         amount.value *= Double(max(1, servings))
         return amount
     }

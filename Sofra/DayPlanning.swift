@@ -76,3 +76,75 @@ extension AppData {
         return pending.first(where: { minutes($0) >= now }) ?? pending.last
     }
 }
+
+struct PersonalIngredient: Identifiable {
+    var id = UUID()
+    var name = ""
+    var quantity = ""
+}
+
+struct RecipeMatch: Identifiable {
+    var recipe: Recipe
+    var missing: [String]
+    var searchText: String
+    var id: String { recipe.id }
+}
+
+extension Recipe {
+    func missing(available: Set<String>) -> [String] { ingredients.filter { !available.contains(Self.ingredientKey($0)) } }
+    static func personal(id: String? = nil, name: String, minutes: Int, portions: Int, ingredients: [PersonalIngredient], instructions: String) throws -> Recipe {
+        let title = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, (1...8).contains(portions), (1...480).contains(minutes), !ingredients.isEmpty else {
+            throw KitchenError.invalid("Yemek adını, porsiyonu ve en az bir malzemeyi ekle.")
+        }
+        var names: [String] = []
+        var amounts: [String: StockAmount] = [:]
+        for ingredient in ingredients {
+            let clean = ingredient.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !clean.isEmpty, var amount = StockAmount.parse(ingredient.quantity), amount.value > 0 else {
+                throw KitchenError.invalid("Her malzemeye ad ve ör. 200 g veya 2 adet gibi bir miktar gir.")
+            }
+            let key = Self.ingredientKey(clean)
+            guard amounts[key] == nil else { throw KitchenError.invalid("\(clean) iki kez eklenmiş. Miktarları tek satırda birleştir.") }
+            amount.value /= Double(portions)
+            names.append(clean)
+            amounts[key] = amount
+        }
+        let steps = instructions.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        return Recipe(id: id ?? "personal-" + UUID().uuidString, name: title, minutes: minutes, ingredients: names, steps: steps, customAmounts: amounts)
+    }
+}
+
+extension AppData {
+    var allRecipes: [Recipe] { Recipe.all + (customRecipes ?? []) }
+    func recipe(withID id: String) -> Recipe? { allRecipes.first { $0.id == id } }
+    mutating func savePersonalRecipe(_ recipe: Recipe) {
+        if customRecipes == nil { customRecipes = [] }
+        if let index = customRecipes?.firstIndex(where: { $0.id == recipe.id }) { customRecipes?[index] = recipe }
+        else { customRecipes?.append(recipe) }
+        if let plans = recipePlans {
+            for (index, plan) in plans.enumerated() where plan.recipeID == recipe.id { recipePlans?[index].snapshot = recipe }
+        }
+        if var days = dayMeals {
+            for day in Array(days.keys) where day >= Self.dayKey() {
+                guard var slots = days[day] else { continue }
+                for slot in Array(slots.keys) where !completed[day, default: []].contains(slot) {
+                    guard var meal = slots[slot], meal.recipeID == recipe.id, meal.origin == .recipe else { continue }
+                    meal.personalRecipe = recipe
+                    meal.dish = recipe.name
+                    slots[slot] = meal
+                }
+                days[day] = slots
+            }
+            dayMeals = days
+        }
+    }
+    func matchedRecipes() -> [RecipeMatch] {
+        let available = Set(inventory.filter { StockAmount.parse($0.quantity)?.value != 0 }.map { Recipe.ingredientKey($0.recipeName ?? $0.name) })
+        return allRecipes.map { RecipeMatch(recipe: $0, missing: $0.missing(available: available), searchText: Recipe.key($0.name + " " + $0.ingredients.joined(separator: " "))) }
+            .sorted { a, b in
+                if a.missing.count != b.missing.count { return a.missing.count < b.missing.count }
+                return a.recipe.minutes == b.recipe.minutes ? a.id < b.id : a.recipe.minutes < b.recipe.minutes
+            }
+    }
+}

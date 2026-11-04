@@ -324,3 +324,52 @@ let dailyRoundTrip = try JSONDecoder().decode(AppData.self, from: JSONEncoder().
 precondition(dailyRoundTrip.lunchPlace(on: tomorrowKey) == .lidl)
 precondition(dailyRoundTrip.meal(on: todayKey, slot: .lunch).origin == .outside)
 print("PASS: unified day flow, meal sources, automatic shopping, scheduled portion aggregation, context persistence, legacy lunch, featured meal and stock-free outside/ready planning")
+
+let myIngredients = [PersonalIngredient(name: "Pirinç", quantity: "300 g"), PersonalIngredient(name: "Tavuk", quantity: "450 g")]
+let myDish = try Recipe.personal(name: "Kendi tavuklu pilavım", minutes: 30, portions: 3, ingredients: myIngredients, instructions: "Pirinci pişir.\nTavuğu tamamen pişirip ekle.")
+precondition(myDish.ingredients.count == 2 && myDish.steps.count == 2)
+precondition(myDish.amount(for: "Pirinç")?.value == 100)
+precondition(myDish.amount(for: "Tavuk", servings: 3)?.value == 450)
+var personalData = AppData()
+personalData.inventory = [Ingredient(name: "Pirinç", quantity: "50 g"), Ingredient(name: "Tavuk", quantity: "500 g")]
+personalData.savePersonalRecipe(myDish)
+precondition(personalData.allRecipes.count == Recipe.all.count + 1)
+let myMeal = DayMeal(time: "19:30", dish: myDish.name, note: "", recipeID: myDish.id, source: .recipe, servings: 3, personalRecipe: myDish)
+try personalData.selectMeal(myMeal, day: todayKey, slot: .dinner)
+precondition(personalData.meal(on: todayKey, slot: .dinner).recipe?.id == myDish.id)
+precondition(personalData.shoppingLines.first { $0.name == "Pirinç" }?.quantityText == "250 g")
+precondition(personalData.shoppingLines.first { $0.name == "Pirinç" }?.recipeNames == [myDish.name])
+precondition(!personalData.shoppingLines.contains { $0.name == "Tavuk" })
+precondition(personalData.usage(for: myDish, servings: 3).first { $0.name == "Tavuk" }?.used == "450 g")
+let personalRoundTrip = try JSONDecoder().decode(AppData.self, from: JSONEncoder().encode(personalData))
+precondition(personalRoundTrip.allRecipes.last?.id == myDish.id)
+precondition(personalRoundTrip.meal(on: todayKey, slot: .dinner).recipe?.amount(for: "Pirinç", servings: 3)?.value == 300)
+let ownMatch = personalRoundTrip.matchedRecipes().first { $0.id == myDish.id }!
+precondition(ownMatch.missing.isEmpty)
+precondition(ownMatch.searchText.contains(Recipe.key(myDish.name)))
+var enough = personalRoundTrip
+enough.inventory[0].quantity = "500 g"
+try enough.cook(id: UUID(), dish: myDish.name, drafts: enough.usage(for: myDish, servings: 3), day: todayKey, slot: .dinner, recipeID: myDish.id, servings: 3, eatenNow: 1)
+precondition(enough.inventory.map(\.quantity) == ["200 g", "50 g"])
+precondition(enough.readyMeals[0].remaining == 2)
+expectFailure { _ = try Recipe.personal(name: "", minutes: 20, portions: 1, ingredients: myIngredients, instructions: "") }
+expectFailure { _ = try Recipe.personal(name: "Yemek", minutes: 20, portions: 1, ingredients: [], instructions: "") }
+expectFailure { _ = try Recipe.personal(name: "Yemek", minutes: 20, portions: 1, ingredients: [PersonalIngredient(name: "Pirinç", quantity: "biraz")], instructions: "") }
+expectFailure { _ = try Recipe.personal(name: "Yemek", minutes: 20, portions: 1, ingredients: [PersonalIngredient(name: "Pirinç", quantity: "100 g"), PersonalIngredient(name: "pirinç", quantity: "100 g")], instructions: "") }
+var ownPlan = AppData()
+ownPlan.savePersonalRecipe(myDish)
+ownPlan.setRecipePlan(myDish, servings: 2)
+precondition(ownPlan.activeRecipePlans[0].recipe?.id == myDish.id)
+precondition(ownPlan.shoppingLines.first { $0.name == "Pirinç" }?.quantityText == "200 g")
+let cachedMatches = personalData.matchedRecipes()
+personalData.water[todayKey] = 7
+precondition(personalData.matchedRecipes().map(\.id) == cachedMatches.map(\.id))
+print("PASS: personal recipe validation, per-portion quantities, library persistence, custom shopping sources, cooking, leftovers and reusable ranked matches")
+let revisedDish = try Recipe.personal(id: myDish.id, name: "Güncel pilavım", minutes: 25, portions: 1, ingredients: [PersonalIngredient(name: "Pirinç", quantity: "120 g"), PersonalIngredient(name: "Tavuk", quantity: "160 g")], instructions: "Pişir.")
+personalData.setRecipePlan(myDish, servings: 3)
+personalData.savePersonalRecipe(revisedDish)
+precondition(personalData.customRecipes?.count == 1)
+precondition(personalData.meal(on: todayKey, slot: .dinner).recipe?.name == revisedDish.name)
+precondition(personalData.activeRecipePlans[0].recipe?.amount(for: "Pirinç")?.value == 120)
+precondition(personalData.shoppingLines.first { $0.name == "Pirinç" }?.quantityText == "310 g")
+print("PASS: personal recipe edits update pending meals and plan quantities without duplicate library entries")

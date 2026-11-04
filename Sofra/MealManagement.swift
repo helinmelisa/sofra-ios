@@ -64,6 +64,7 @@ struct MealEditorView: View {
                                 draft.preparedID = nil
                                 draft.dish = recipe.name
                                 draft.recipeID = recipe.id
+                                draft.personalRecipe = recipe.customAmounts == nil ? nil : recipe
                             }
                         }
                     }
@@ -183,6 +184,7 @@ struct CookingSheet: View {
                                 meal.servings = servings
                                 meal.dish = request.dish
                                 meal.recipeID = request.recipe?.id
+                                meal.personalRecipe = request.recipe?.customAmounts == nil ? nil : request.recipe
                                 store.data.updateMeal(meal, day: day, slot: slot)
                             }
                             onSaved?(request.id)

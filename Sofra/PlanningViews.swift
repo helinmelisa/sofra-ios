@@ -7,24 +7,23 @@ struct RecipeListView: View {
     @State private var category: RecipeCategory = .all
     @State private var search = ""
     @State private var planning: Recipe?
+    @State private var writingPersonal = false
     var selectionLabel = "Yarının öğle yemeği olarak seç"
     var onSelect: ((Recipe) -> Void)? = nil
 
-    private var recipes: [Recipe] {
-        Recipe.all.filter { recipe in
-            let query = Recipe.key(search)
-            return (category == .all || recipe.category == category) &&
-                (query.isEmpty || Recipe.key(recipe.name).contains(query) || recipe.ingredients.contains { Recipe.key($0).contains(query) }) &&
-                (showAll || !query.isEmpty || recipe.missing(in: store.data.inventory).count <= 2)
-        }.sorted {
-            let a = $0.missing(in: store.data.inventory).count, b = $1.missing(in: store.data.inventory).count
-            if a != b { return a < b }
-            return $0.minutes == $1.minutes ? $0.id < $1.id : $0.minutes < $1.minutes
+    private var matches: [RecipeMatch] {
+        let query = Recipe.key(search)
+        return store.recipeMatches.filter {
+            (category == .all || $0.recipe.category == category) &&
+            (query.isEmpty || $0.searchText.contains(query)) &&
+            (showAll || !query.isEmpty || $0.missing.count <= 2)
         }
     }
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                let results = matches
+                let planned = Set(store.data.activeRecipePlans.map(\.recipeID))
                 NavigationLink { RecipePlanView() } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 6) {
@@ -37,49 +36,54 @@ struct RecipeListView: View {
                         Image(systemName: "arrow.right")
                     }.padding(.vertical, 10)
                 }.buttonStyle(.plain)
+                Button { writingPersonal = true } label: { Label("Kendi tarifimi ekle", systemImage: "square.and.pencil") }.buttonStyle(.bordered)
                 TextField("Tarif veya malzeme ara", text: $search).textFieldStyle(.roundedBorder)
                 Picker("Tarif görünümü", selection: $showAll) {
                     Text("Mutfaktan öneriler").tag(false)
-                    Text("Tümü · \(Recipe.all.count)").tag(true)
+                    Text("Tümü · \(store.recipeMatches.count)").tag(true)
                 }.pickerStyle(.segmented)
                 Picker("Tür", selection: $category) {
                     ForEach(RecipeCategory.allCases) { Text($0.rawValue).tag($0) }
                 }
-                if recipes.isEmpty {
+                if results.isEmpty {
                     ContentUnavailableView("Bu seçimde tarif yok", systemImage: "carrot", description: Text("Tüm tarifleri açabilir, aramanı değiştirebilir veya mutfağına malzeme ekleyebilirsin."))
                 }
-                let ready = recipes.filter { $0.missing(in: store.data.inventory).isEmpty }
-                let missing = recipes.filter { !$0.missing(in: store.data.inventory).isEmpty }
+                let ready = results.filter { $0.missing.isEmpty }
+                let missing = results.filter { !$0.missing.isEmpty }
                 if !ready.isEmpty {
                     Caption(text: "Evdekilerle · \(ready.count) tarif")
-                    ForEach(ready) { recipe in recipeRow(recipe) }
+                    ForEach(ready) { match in recipeRow(match, planned: planned.contains(match.id)) }
                 }
                 if !missing.isEmpty {
                     Caption(text: showAll || !search.isEmpty ? "Eksikleri tamamlayarak" : "1–2 eksiğin var")
-                    ForEach(missing) { recipe in recipeRow(recipe) }
+                    ForEach(missing) { match in recipeRow(match, planned: planned.contains(match.id)) }
                 }
                 Text("Malzeme varlığına göre önerilir. Miktarları tarifte kontrol et. Planına eklediğinde hesaplanabilen eksikler alışverişe otomatik yansır.")
                     .font(.caption).foregroundStyle(.secondary)
             }.padding(26)
-        }.background(Ink.paper).foregroundStyle(Ink.dark)
+        }.scrollDismissesKeyboard(.interactively).background(Ink.paper).foregroundStyle(Ink.dark)
             .toolbar(.visible, for: .navigationBar)
             .navigationTitle("Tarifler").navigationBarTitleDisplayMode(.inline)
             .sheet(item: $planning) { RecipePlanSheet(recipe: $0) }
+            .sheet(isPresented: $writingPersonal) {
+                PersonalRecipeEditor { recipe, _ in showAll = true; category = .all; search = recipe.name }
+            }
     }
-    private func recipeRow(_ recipe: Recipe) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+    private func recipeRow(_ match: RecipeMatch, planned: Bool) -> some View {
+        let recipe = match.recipe
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 NavigationLink { RecipeDetail(recipe: recipe) } label: {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("\(recipe.minutes) DK · \(recipe.category.rawValue)").font(.caption).foregroundStyle(Ink.rust)
                         Text(recipe.name).font(.system(.title2, design: .serif))
-                        let missing = recipe.missing(in: store.data.inventory)
+                        let missing = match.missing
                         Text(missing.isEmpty ? "Malzemeler mutfakta" : "Eksik: " + missing.joined(separator: ", "))
                             .font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.buttonStyle(.plain)
                 Button { planning = recipe } label: {
-                    Image(systemName: store.data.activeRecipePlans.contains(where: { $0.recipeID == recipe.id }) ? "checkmark.circle.fill" : "plus.circle")
+                    Image(systemName: planned ? "checkmark.circle.fill" : "plus.circle")
                         .font(.title2).frame(width: 44, height: 44)
                 }.accessibilityLabel("\(recipe.name) pişirme planı")
             }
@@ -282,7 +286,7 @@ struct ShoppingView: View {
                     Button("Elle eklenen ihtiyacı kaldır", role: .destructive) { store.data.shopping.removeAll { line.manualIDs.contains($0.id) } }
                 }
                 ForEach(line.recipeIDs, id: \.self) { id in
-                    if let recipe = Recipe.all.first(where: { $0.id == id }) {
+                    if let recipe = store.data.recipe(withID: id) {
                         Button("\(recipe.name) tarifini plandan çıkar", role: .destructive) { store.data.removeRecipePlan(id) }
                     }
                 }

@@ -233,19 +233,18 @@ struct MealChooserView: View {
     @State private var source: MealOrigin = .recipe
     @State private var query = ""
     @State private var outside = ""
-    @State private var custom = ""
     @State private var note = ""
     @State private var time = Date.now
     @State private var servings = 1
     @State private var error: String?
     @State private var showAll = false
-    @State private var customRecipe = false
+    @State private var personalEditor = false
+    @State private var pendingPersonal: Recipe?
+    @State private var pendingPortions = 1
     @State private var loaded = false
-    private var recipes: [Recipe] {
-        let matching = Recipe.all.filter { query.isEmpty || Recipe.key($0.name).contains(Recipe.key(query)) || $0.ingredients.contains { Recipe.ingredientKey($0).contains(Recipe.ingredientKey(query)) } }.sorted {
-            let a = $0.missing(in: store.data.inventory).count, b = $1.missing(in: store.data.inventory).count
-            return a == b ? ($0.minutes == $1.minutes ? $0.id < $1.id : $0.minutes < $1.minutes) : a < b
-        }
+    private var recipeMatches: [RecipeMatch] {
+        let normalized = Recipe.key(query)
+        let matching = store.recipeMatches.filter { normalized.isEmpty || $0.searchText.contains(normalized) }
         return showAll || !query.isEmpty ? matching : Array(matching.prefix(8))
     }
     var body: some View {
@@ -273,8 +272,20 @@ struct MealChooserView: View {
                     }.font(.caption)
                     if let error { Text(error).foregroundStyle(.red).font(.subheadline) }
                 }.padding(24)
-            }.background(Ink.paper).foregroundStyle(Ink.dark)
+            }.scrollDismissesKeyboard(.interactively).background(Ink.paper).foregroundStyle(Ink.dark)
                 .navigationBarTitleDisplayMode(.inline)
+                .sheet(isPresented: $personalEditor, onDismiss: {
+                    if let recipe = pendingPersonal {
+                        pendingPersonal = nil
+                        save(DayMeal(time: request.meal.time, dish: recipe.name, note: "", recipeID: recipe.id, source: .recipe, servings: pendingPortions, personalRecipe: recipe))
+                    }
+                }) {
+                    PersonalRecipeEditor(initial: request.meal.personalRecipe, initialServings: servings,
+                        initialName: request.meal.origin == .recipe && request.meal.recipe == nil ? request.meal.dish : "") { recipe, count in
+                        pendingPersonal = recipe
+                        pendingPortions = count
+                    }
+                }
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Vazgeç") { dismiss() } } }
                 .onAppear(perform: load)
                 .onChange(of: time) { _, _ in saveCurrentDetails() }
@@ -302,27 +313,24 @@ struct MealChooserView: View {
         }
     }
     private var recipeChoices: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        LazyVStack(alignment: .leading, spacing: 18) {
+            Button { personalEditor = true } label: { Label(request.meal.personalRecipe == nil ? "Kendi yemeğimi yaz" : "Kendi tarifimi düzenle", systemImage: "square.and.pencil") }.buttonStyle(.bordered)
             Stepper("\(servings) porsiyon pişireceğim", value: $servings, in: 1...8)
             TextField("Tarif veya malzeme ara", text: $query).textFieldStyle(.roundedBorder)
-            ForEach(recipes) { recipe in
+            ForEach(recipeMatches) { match in
+                let recipe = match.recipe
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 7) {
                         Text(recipe.name).font(.system(.title3, design: .serif))
-                        let missing = recipe.missing(in: store.data.inventory)
+                        let missing = match.missing
                         Text(missing.isEmpty ? "\(recipe.minutes) dk · malzemeler mutfakta" : "\(recipe.minutes) dk · eksik: " + missing.joined(separator: ", "))
                             .font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading)
-                    Button("Seç") { save(DayMeal(time: request.meal.time, dish: recipe.name, note: "", recipeID: recipe.id, source: .recipe, servings: servings)) }.buttonStyle(.bordered)
+                    Button("Seç") { save(DayMeal(time: request.meal.time, dish: recipe.name, note: "", recipeID: recipe.id, source: .recipe, servings: servings, personalRecipe: recipe.customAmounts == nil ? nil : recipe)) }.buttonStyle(.bordered)
                 }
                 Divider()
             }
-            if !showAll && query.isEmpty { Button("\(Recipe.all.count) tarifin tümünü göster") { showAll = true } }
-            DisclosureGroup("Kendi yemeğimi yaz", isExpanded: $customRecipe) {
-                TextField("Yemek adı", text: $custom).textFieldStyle(.roundedBorder).padding(.vertical, 8)
-                Button("Öğüne ekle") { save(DayMeal(time: request.meal.time, dish: custom, note: "", recipeID: nil, source: .recipe, servings: servings)) }
-                    .disabled(custom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
+            if !showAll && query.isEmpty { Button("\(store.recipeMatches.count) tarifin tümünü göster") { showAll = true } }
             Text("Tarifin hesaplanabilen eksikleri alışverişe otomatik yansır. Seçmek stokları azaltmaz. Miktarı belirsiz ürünleri alışverişte kontrol edebilirsin.")
                 .font(.caption).foregroundStyle(.secondary)
         }
@@ -350,7 +358,6 @@ struct MealChooserView: View {
         if !request.meal.dish.isEmpty {
             source = request.meal.origin
             if source == .outside { outside = request.meal.dish }
-            else if request.meal.recipe == nil && source == .recipe { custom = request.meal.dish }
         } else if request.slot == .lunch && (lunchPlace == .lidl || lunchPlace == .cafeteria) { source = .outside }
         else { source = store.data.readyMeals.isEmpty ? .recipe : .prepared }
     }

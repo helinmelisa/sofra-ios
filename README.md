@@ -23,6 +23,10 @@ Built with SwiftUI for iOS 17 and later. Dynamic receipt translation requires iO
 - **Recipes:** 40 starter recipes spanning breakfast, main dishes, salads/bowls, and soups.
   Kitchen-based recommendations separate fully matched recipes from those missing one or two
   ingredients. Browse the full collection, search by dish or ingredient, and filter by category.
+- **Personal recipes:** write a dish name, ingredient amounts, batch portions, cooking time, and
+  optional preparation steps. Pick ingredient names from your kitchen or enter new ones. Amounts
+  are stored per portion, so personal recipes support automatic shopping, cooking deductions,
+  leftovers, and reuse in the recipe library just like the starter recipes.
 - **Cooking plan:** choose recipes and how many portions to prepare (one by default).
   Missing ingredients automatically populate shopping; compatible quantities are combined and
   existing kitchen stock is subtracted once across the entire plan. Selecting a recipe for a
@@ -85,6 +89,7 @@ Requires macOS and Xcode command-line tools:
 
 ```sh
 sh scripts/check-models.sh
+sh scripts/check-store.sh
 xcodebuild -project Sofra.xcodeproj -scheme Sofra -configuration Debug \
   -sdk iphonesimulator -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
 ```
@@ -96,6 +101,11 @@ duplicate protection, undo, recipe-plan aggregation, purchase transfer, portion 
 leftovers without double stock deduction, explicit meal sources, scheduled shopping aggregation,
 next-meal selection, lunch contexts, and persistence of older records. No XCTest or UI-test target is configured yet.
 Translation model downloads and translation output require testing on a supported device.
+
+Recipe matching is cached until inventory or personal recipes change. Recipe lists use lazy rows;
+normal redraws and tab switches do not re-sort the entire collection. Persistence checks exercise
+500 rapid writes, a flush/reopen round trip, cache invalidation, and corrupt-file preservation. Local JSON writes are serialized
+on a background queue, coalescing pending writes and flushing when the app enters the background.
 
 ## Current scope
 

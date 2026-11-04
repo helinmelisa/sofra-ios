@@ -3,8 +3,9 @@ import Foundation
 struct RecipePlan: Identifiable, Codable, Equatable {
     var recipeID: String
     var servings: Int
+    var snapshot: Recipe? = nil
     var id: String { recipeID }
-    var recipe: Recipe? { Recipe.all.first { $0.id == recipeID } }
+    var recipe: Recipe? { snapshot ?? Recipe.all.first { $0.id == recipeID } }
 }
 
 struct PreparedMeal: Identifiable, Codable {
@@ -32,13 +33,14 @@ struct ShoppingLine: Identifiable {
     var recipeIDs: [String]
     var manualIDs: [UUID]
     var manualUnspecified: Bool
+    var sourceNames: [String]? = nil
     var quantityText: String {
         let amounts = amounts.map(\.text).joined(separator: " + ")
         if amounts.isEmpty { return "Miktar ekle" }
         return amounts + (manualUnspecified ? " + ek ihtiyaç" : "")
     }
     var signature: String { quantityText }
-    var recipeNames: [String] { recipeIDs.compactMap { id in Recipe.all.first { $0.id == id }?.name } }
+    var recipeNames: [String] { sourceNames ?? recipeIDs.compactMap { id in Recipe.all.first { $0.id == id }?.name } }
 }
 
 struct PurchaseDraft: Identifiable {
@@ -53,7 +55,7 @@ extension AppData {
         var plans = (recipePlans ?? []).filter { $0.servings > 0 && $0.recipe != nil }
         for (recipeID, servings) in scheduledRecipePortions.sorted(by: { $0.key < $1.key }) {
             if let index = plans.firstIndex(where: { $0.recipeID == recipeID }) { plans[index].servings = max(plans[index].servings, servings) }
-            else { plans.append(RecipePlan(recipeID: recipeID, servings: servings)) }
+            else { plans.append(RecipePlan(recipeID: recipeID, servings: servings, snapshot: recipe(withID: recipeID))) }
         }
         return plans
     }
@@ -62,8 +64,8 @@ extension AppData {
     mutating func setRecipePlan(_ recipe: Recipe, servings: Int) {
         let count = min(8, max(1, servings))
         if recipePlans == nil { recipePlans = [] }
-        if let index = recipePlans?.firstIndex(where: { $0.recipeID == recipe.id }) { recipePlans?[index].servings = count }
-        else { recipePlans?.append(RecipePlan(recipeID: recipe.id, servings: count)) }
+        if let index = recipePlans?.firstIndex(where: { $0.recipeID == recipe.id }) { recipePlans?[index].servings = count; recipePlans?[index].snapshot = recipe }
+        else { recipePlans?.append(RecipePlan(recipeID: recipe.id, servings: count, snapshot: recipe)) }
     }
     mutating func removeRecipePlan(_ id: String) {
         recipePlans?.removeAll { $0.recipeID == id }
@@ -131,6 +133,11 @@ extension AppData {
                     line.amounts[index].value += amount.converted(to: line.amounts[index].unit)
                 } else { line.amounts.append(amount) }
             } else { line.manualUnspecified = true }
+            lines[key] = line
+        }
+        for key in Array(lines.keys) {
+            guard var line = lines[key] else { continue }
+            line.sourceNames = line.recipeIDs.compactMap { recipe(withID: $0)?.name }
             lines[key] = line
         }
         return lines.values.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }

@@ -15,7 +15,7 @@ enum StorageLocation: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct Ingredient: Identifiable, Codable {
+struct Ingredient: Identifiable, Codable, Equatable {
     var id: UUID
     var name: String
     var quantity: String
@@ -47,16 +47,16 @@ struct ShoppingItem: Identifiable, Codable {
     var quantity: String? = nil
 }
 
-struct Recipe: Identifiable {
+struct Recipe: Identifiable, Codable, Equatable {
     let id: String
     let name: String
     let minutes: Int
     let ingredients: [String]
     let steps: [String]
+    var customAmounts: [String: StockAmount]? = nil
 
     func missing(in inventory: [Ingredient]) -> [String] {
-        let available = Set(inventory.filter { StockAmount.parse($0.quantity)?.value != 0 }.map { Self.ingredientKey($0.recipeName ?? $0.name) })
-        return ingredients.filter { !available.contains(Self.ingredientKey($0)) }
+        return missing(available: Set(inventory.filter { StockAmount.parse($0.quantity)?.value != 0 }.map { Self.ingredientKey($0.recipeName ?? $0.name) }))
     }
 
     static func key(_ name: String) -> String {
@@ -133,6 +133,7 @@ struct AppData: Codable {
     var leftoverUses: [LeftoverUse]? = nil
     var lunchContexts: [String: LunchPlace]? = nil
     var dailyRecipeLinks: [String: DailyRecipeLink]? = nil
+    var customRecipes: [Recipe]? = nil
 
     static func dayKey(_ date: Date = .now) -> String {
         let formatter = DateFormatter()
@@ -291,7 +292,8 @@ struct DayMeal: Codable {
     var preparedID: UUID? = nil
     var source: MealOrigin? = nil
     var servings: Int? = nil
-    var recipe: Recipe? { guard preparedID == nil, source != .outside else { return nil }; return Recipe.all.first { $0.id == recipeID || Recipe.key($0.name) == Recipe.key(dish) } }
+    var personalRecipe: Recipe? = nil
+    var recipe: Recipe? { guard preparedID == nil, source != .outside else { return nil }; return personalRecipe ?? Recipe.all.first { $0.id == recipeID || Recipe.key($0.name) == Recipe.key(dish) } }
 }
 
 struct StockAmount: Equatable, Codable {
@@ -306,10 +308,10 @@ struct StockAmount: Equatable, Codable {
         String(format: "%.3f", value).replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: ".", with: ",") + " " + unit
     }
+    private static let amountRegex = try! NSRegularExpression(pattern: #"^(\d+(?:[.,]\d+)?)\s*(kg|g|gr|gram|ml|l|lt|litre|adet|kase|paket|şişe|kap|dilim|diş)?$"#)
     static func parse(_ text: String) -> StockAmount? {
         let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard let regex = try? NSRegularExpression(pattern: #"^(\d+(?:[.,]\d+)?)\s*(kg|g|gr|gram|ml|l|lt|litre|adet|kase|paket|şişe|kap|dilim|diş)?$"#),
-              let match = regex.firstMatch(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)),
+        guard let match = amountRegex.firstMatch(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)),
               let numberRange = Range(match.range(at: 1), in: normalized),
               let value = Double(normalized[numberRange].replacingOccurrences(of: ",", with: ".")), value.isFinite else { return nil }
         let rawUnit = Range(match.range(at: 2), in: normalized).map { String(normalized[$0]) } ?? "adet"
